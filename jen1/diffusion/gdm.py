@@ -4,6 +4,7 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.cuda.amp import autocast
 from einops import reduce
 from tqdm import tqdm
 
@@ -25,6 +26,7 @@ class GaussianDiffusion(nn.Module):
             scale_cfg=False,
             sampling_timesteps=None,
             ddim_sampling_eta=0.,
+            use_fp16=False,
     ):
         super().__init__()
         self.objective = objective
@@ -33,6 +35,7 @@ class GaussianDiffusion(nn.Module):
         self.embedding_scale = embedding_scale
         self.batch_cfg = batch_cfg
         self.scale_cfg = scale_cfg
+        self.use_fp16 = use_fp16
         assert objective in {'noise', 'x_0',
                              'v'}, 'objective must be either pred_noise (predict noise) or pred_x0 (predict image start) or pred_v (predict v)'
         assert loss_type in {'l1', 'l2'}
@@ -107,14 +110,15 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
     def model_predictions(self, x, t, model, conditioning=None, clip_x_start=False):
-        model_out = model(x, t, embedding=conditioning['cross_atn_cond'],
-                          embedding_mask=conditioning['cross_attn_mask'],
-                          embedding_scale=self.embedding_scale,
-                          embedding_mask_prob=self.cfg_dropout_proba,
-                          features=conditioning['global_cond'],
-                          channels_list=[conditioning['input_concat_cond']],
-                          batch_cfg=self.batch_cfg, scale_cfg=self.scale_cfg,
-                          causal=False)
+        with autocast(enabled=self.use_fp16):
+            model_out = model(x, t, embedding=conditioning['cross_attn_cond'],
+                            embedding_mask=conditioning['cross_attn_masks'],
+                            embedding_scale=self.embedding_scale,
+                            embedding_mask_prob=self.cfg_dropout_proba,
+                            features=conditioning['global_cond'],
+                            channels_list=[conditioning['input_concat_cond']],
+                            batch_cfg=self.batch_cfg, scale_cfg=self.scale_cfg,
+                            causal=False)
         maybe_clip = partial(torch.clamp, min=-1, max=1.) if clip_x_start else identity
 
         if self.objective == 'noise':
@@ -230,15 +234,16 @@ class GaussianDiffusion(nn.Module):
         if noise is None:
             noise = torch.rand_like(x_start)
         x_t = self.q_sample(x_start, t, noise=noise)
-
-        model_out = model(x_t, t, embedding=conditioning['cross_atn_cond'],
-                          embedding_mask=conditioning['cross_attn_mask'],
-                          embedding_scale=self.embedding_scale,
-                          embedding_mask_prob=self.cfg_dropout_proba,
-                          features=conditioning['global_cond'],
-                          channels_list=[conditioning['input_concat_cond']],
-                          batch_cfg=self.batch_cfg, scale_cfg=self.scale_cfg,
-                          causal=causal)
+        
+        with autocast(enabled=self.use_fp16):
+            model_out = model(x_t, t, embedding=conditioning['cross_attn_cond'],
+                            embedding_mask=conditioning['cross_attn_masks'],
+                            embedding_scale=self.embedding_scale,
+                            embedding_mask_proba=self.cfg_dropout_proba,
+                            features=conditioning['global_cond'],
+                            channels_list=[conditioning['input_concat_cond']],
+                            batch_cfg=self.batch_cfg, scale_cfg=self.scale_cfg,
+                            causal=causal)
 
         if self.objective == 'noise':
             target = noise
