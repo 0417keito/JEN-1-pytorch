@@ -163,6 +163,7 @@ def create_model_and_diffusion(config: Config, sampling_steps=None):
 
 
 def create_diffusion(config: Config, sampling_steps=None):
+    use_fp16 = config.use_fp16
     diffusion_type = config.diffusion_type
     if diffusion_type.lower() == 'gdm':
         diffusion_config = config.diffusion_config.gaussian_diffusion
@@ -175,7 +176,8 @@ def create_diffusion(config: Config, sampling_steps=None):
                                          embedding_scale=diffusion_config.embedding_scale,
                                          batch_cfg=diffusion_config.batch_cfg,
                                          scale_cfg=diffusion_config.scale_cfg,
-                                         sampling_steps=sampling_steps)
+                                         sampling_steps=sampling_steps,
+                                         use_fp16=use_fp16)
     elif diffusion_type.lower() == 'vdm':
         diffusion_config = config.diffusion_config.variational_diffusion
     elif diffusion_type.lower() == 'edm':
@@ -186,15 +188,18 @@ def create_gaussian_diffusion(steps=1000,
                               noise_schedule='linear',
                               objective='v',
                               loss_type='mse',
-                              device='cpu',
+                              device='cuda',
                               cfg_dropout_proba=0.1,
                               embedding_scale=1,
                               batch_cfg=False,
                               scale_cfg=False,
                               sampling_steps=None,
+                              use_fp16=False
                               ):
     from jen1.diffusion.gdm import GaussianDiffusion
     betas = get_beta_schedule(noise_schedule, steps)
+    betas = betas.to(device)
+    betas = betas.to(torch.float32)
     return GaussianDiffusion(
         steps=steps,
         betas=betas,
@@ -205,13 +210,15 @@ def create_gaussian_diffusion(steps=1000,
         embedding_scale=embedding_scale,
         batch_cfg=batch_cfg,
         scale_cfg=scale_cfg,
-        sampling_timesteps=sampling_steps
-    )
+        sampling_timesteps=sampling_steps,
+        use_fp16=use_fp16
+    ).to(device)
 
 
 def create_model(config: Config):
     from jen1.model.model import UNetCFG1d
     model_config = config.model_config
+    device = config.device
     config_dict = {k: v for k, v in model_config.__dict__.items() if not k.startswith('__') and not callable(v)}
     context_embedding_features = config_dict.pop('context_embedding_features', None)
     context_embedding_max_length = config_dict.pop('context_embedding_max_length', None)
@@ -221,4 +228,4 @@ def create_model(config: Config):
 
     return UNetCFG1d(context_embedding_features=context_embedding_features, 
                      context_embedding_max_length=context_embedding_max_length, 
-                     **config_dict)
+                     **config_dict).to(device)
