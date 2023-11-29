@@ -4,19 +4,18 @@ from .conditioner_config import ConditionerConfig
 
 @dataclass
 class DataConfig:
-    sr = 48000 #audio sampling rate
-    channels = 1 #audio channels
-    batch_size = 32 
-    num_workers = 1 
-    dataset_dir = '/home/keito/JEN-1-pytorch/data'
-    train_test_split = 0.9
-    min_duration = 30 # lower limit on the duration of the audio file to be used
-    max_duration = 90 # maximum duration of the audio file to be used
-    num_buckets = 10 # Number of buckets used for sampling. Putting together audio files of similar duration.
-    sample_length = 480000 # sample length = sampling rate × audio_duration(s)
-    aug_shift =  False # whether using data augmentation
-    cache_dir = '/home/keito/JEN-1-pytorch/data' # to save the duration of the audio file
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    dataset_dir = ''
+    sr = 48000
+    channels = 1
+    # min_duration, max_duration, and sample_duration are all listed in seconds.
+    min_duration = 0
+    max_duration = 300
+    sample_duration = 10 # This length determines the length of the latent variable. Adjust the length of the latent variable so that it is 2**(num_layers).
+    aug_shift = True
+    batch_size = 1 
+    shuffle = True
+    train_test_split = 0.5
+    device = 'cuda' if torch.cuda.is_available else 'cpu'
 
 @dataclass
 class GDM_Config:
@@ -61,11 +60,11 @@ class ModelConfig:
     use_stft_context = False
     use_xattn_time = True
     out_channels = 128
-    context_features = 1024
-    context_features_multiplier = 4
+    context_features = None # if you want to use cond['global_cond']
+    context_features_multiplier = 4 # if you want to use cond['global_cond'] or use_context_time == True
     context_channels = [129]
-    context_embedding_features = 1
-    context_embedding_max_length = 1
+    context_embedding_features = 1024
+    context_embedding_max_length = 128
     attention_heads = 8
     attention_multiplier = 1
 
@@ -79,8 +78,8 @@ class OptimizerConfig:
 
 @dataclass
 class Config:
-    save_dir = '/home/keito/JEN-1-pytorch/data'
-    log_dir = '/home/keito/JEN-1-pytorch/data'
+    save_dir = ''
+    log_dir = ''
     use_ddp = True
     use_fp16 = False
     use_ema = False
