@@ -1,0 +1,17 @@
+av==10.0.0
+Cython==3.0.2
+demucs==4.0.1
+descript-audio-codec==1.0.0
+encodec==0.1.1
+einops==0.6.1
+einops-exts==0.0.4
+numba==0.57.1
+numpy==1.24.4
+torch==2.0.1
+torchaudio==2.0.2
+torchmetrics==1.1.2
+tqdm==4.66.1
+transformers==4.33.1
+librosa==0.10.1
+packaging==23.1
+pandas
