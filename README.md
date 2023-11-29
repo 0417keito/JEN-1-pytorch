@@ -1,7 +1,7 @@
 # JEN-1-pytorch
 Unofficial implementation JEN-1: Text-Guided Universal Music Generation with Omnidirectional Diffusion Models(https://arxiv.org/abs/2308.04729)
 
-![JEN-1](https://github.com/0417keito/JEN-1-pytorch/blob/main/JEN1%20.png)
+![JEN-1](https://github.com/0417keito/JEN-1-pytorch/blob/main/JEN1.png)
 
 ## README
 
