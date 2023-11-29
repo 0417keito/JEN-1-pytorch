@@ -36,7 +36,7 @@ samples = Jen1.generate(prompt)
 
 ### Training
 ```commandline
-python train.py
+python -m torch.distributed.launch train.py
 ```
 
 ### Dataset format
