@@ -113,20 +113,22 @@ class UnifiedMultiTaskTrainer(nn.Module):
             for i in range(batches_per_task):
                 weighted_loss = 0.0
                 loss_dict = {}
-                for task in self.tasks:
-                    try:
-                        batch_idx, (audio_emb, metadata) = next(data_iter)
-                    except StopIteration:
+                for batch_idx, (audio_emb, metadata) in enumerate(data_iter):
+                    if batch_idx >= batches_per_task:
                         break
-                    loss = self.train(task=task, audio_emb=audio_emb, metadata=metadata)
-                    weighted_loss += loss.item()
-                    loss_dict[task] = loss.item()
+                    weighted_loss = 0.0
+                    loss_dict = {}
+                    for task in self.tasks:
+                        loss = self.train(task=task, audio_emb=audio_emb, metadata=metadata)
+                        weighted_loss += loss.item()
+                        loss_dict[task] = loss.item()
                 
                 self.optimizer.zero_grad()
                 self.scaler.scale(weighted_loss).backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
                 self.scaler.unscale_(self.optimizer)
                 self.scaler.step(self.optimizer)
+                self.lr_scheduler.step()
                 self.scaler.update()
                 
                 if self.rank == 0:
@@ -154,10 +156,8 @@ class UnifiedMultiTaskTrainer(nn.Module):
                         save_checkpoint(model=self.model, optimizer=self.optimizer,
                                         lr=self.config.optimizer_config.lr, iteration=epoch,
                                         checkpoint_path=os.path.join(self.config.save_dir, f'Jen1_step_{self.global_step}.pth'))
-                        
-                self.global_step += 1     
-                                 
-        self.lr_scheduler.step()
+                     
+                self.global_step += 1   
     
     def train(self, task, audio_emb, metadata):
         self.model.train()
@@ -167,9 +167,10 @@ class UnifiedMultiTaskTrainer(nn.Module):
         conditioning['masked_input'] = masked_input
         conditioning['mask'] = mask
         conditioning = self.get_conditioning(conditioning)
-        num_timesteps = self.diffusion.steps
+        num_timesteps = self.diffusion.num_timesteps
         t = torch.randint(0, num_timesteps, (b,), device=device).long()
         with autocast(enabled=self.config.use_fp16):
+            print('audio_emb.shape:', audio_emb.shape)
             loss = self.diffusion.training_loosses(self.model, audio_emb, t, conditioning, causal=causal)
         return loss
             
@@ -179,8 +180,9 @@ class UnifiedMultiTaskTrainer(nn.Module):
         masks = []
         if task.lower() == 'text_guided':
             mask = torch.zeros((1, 1, sequence_length)).to(sequence.device)
-            masks.apeend(mask)
+            masks.append(mask)
             causal = random.choices([True, False])
+            causal = causal[0]
         elif task.lower() == 'music_inpaint':
             mask_length = random.randint(sequence_length*0.2, sequence_length*0.8)
             mask_start = random.randint(0, sequence_length-mask_length)
@@ -189,7 +191,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
             mask[:, :, mask_start:mask_start+mask_length] = 0
             mask = mask.to(sequence.device)
             
-            mask.append(mask)
+            masks.append(mask)
             causal = False
         elif task.lower() == 'music_cont':
             mask_length = random.randint(sequence_length*0.2, sequence_length*0.8)
@@ -228,8 +230,8 @@ class UnifiedMultiTaskTrainer(nn.Module):
         if len(self.input_concat_ids) > 0:
             # Concatenate all input concat conditioning inputs over the channel dimension
             # Assumes that the input concat conditioning inputs are of shape (batch, channels, seq)
-            input_concat_cond = torch.cat([cond[key][0] for key in self.input_concat_ids], dim=1)
-            
+            input_concat_cond = torch.cat([cond[key] for key in self.input_concat_ids], dim=1)
+
         return {
             "cross_attn_cond": cross_attention_input,
             "cross_attn_masks": cross_attention_masks,

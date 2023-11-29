@@ -4,7 +4,7 @@ from torch.cuda.amp import GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 
-from dataset.data_processor import DataProcessor
+from dataset.dataloader import get_dataloaders
 from trainer import UnifiedMultiTaskTrainer
 from utils.config import OptimizerConfig, DataConfig
 from utils.logger import get_logger
@@ -36,24 +36,13 @@ def run(rank, n_gpus, config: Config):
     # create dataset
     logger.info('creating data loader...')
     data_config = Config.dataset_config
-    dataprocessor = DataProcessor(batch_size=data_config.batch_size,
-                                  num_workers=data_config.num_workers,
-                                  dataset_dir=data_config.dataset_dir,
-                                  sr=data_config.sr,
-                                  channels=data_config.channels,
-                                  train_test_split=data_config.train_test_split,
-                                  min_duration=data_config.min_duration,
-                                  max_duration=data_config.max_duration,
-                                  sample_length=data_config.sample_length,
-                                  aug_shift=data_config.aug_shift,
-                                  cache_dir=data_config.cache_dir,
-                                  device=data_config.device,
-                                  n_gpus=n_gpus,
-                                  rank=rank)
 
-    train_dl = dataprocessor.train_loader
-    if rank == 0:
-        valid_dl = dataprocessor.valid_loader
+    train_dl, valid_dl = get_dataloaders(data_config.dataset_dir, data_config.sr, 
+                                         data_config.channels, data_config.min_duration,
+                                         data_config.max_duration, data_config.sample_duration,
+                                         data_config.aug_shift, data_config.batch_size,
+                                         data_config.shuffle, data_config.train_test_split,
+                                         data_config.device)
 
     # create model and diffusion
     logger.info('creating model and diffusion...')
@@ -137,11 +126,4 @@ def run(rank, n_gpus, config: Config):
 
 if __name__ == '__main__':
     config = Config()
-    config.num_epoch = 1000
-    config.save_dir = './checkpoints'
-    config.log_dir = './logs'
-    config.use_ddp = False
-    config.dataset_config = DataConfig()
-    config.dataset_config.dataset_dir = './dataset'
-    config.dataset_config.batch_size = 1
     main(config=Config)
