@@ -250,12 +250,15 @@ class UNet1d(nn.Module):
                 embedding_mask=embedding_mask, causal=causal
             )
             skips_list += [skips]
-
+            print(f'downsample{i}', 'skip', skips[-1].shape, 'x', x.shape)
+        print('x.shape', x.shape)
         x = self.bottleneck(x, mapping=mapping, embedding=embedding,
                             embedding_mask=embedding_mask, causal=causal)
+        print('x.shape', x.shape)
 
         for i, upsample in enumerate(self.upsamples):
             skips = skips_list.pop()
+            print(f'upsample{i}', 'skip', skips[-1].shape, 'x', x.shape)
             x = upsample(x, skips=skips, mapping=mapping, embedding=embedding,
                          embedding_mask=embedding_mask, causal=causal)
 

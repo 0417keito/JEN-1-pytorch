@@ -22,42 +22,51 @@ def ConvTranspose1d(*args, **kwargs) -> nn.Module:
     return nn.ConvTranspose1d(*args, **kwargs)
 '''
 
-def Conv1d(*args, causal=False, **kwargs):
+def Identity():
+    class _Identity(nn.Module):
+        def __init__(self):
+            super(_Identity, self).__init__()
+        def forward(self, x, causal=False):
+            return x
+    
+    return _Identity()
+
+def Conv1d(*args, **kwargs):
     class _Conv1d(nn.Module):
         def __init__(self):
             super(_Conv1d, self).__init__()
-            self.causal = causal
-            kernel_size = kwargs.get('kernel_size', 1)
-            dilation = kwargs.get('dilation', 1)
-            self.padding = (kernel_size - 1) * dilation if causal else kwargs.get('padding', 0)
+            self.kernel_size = kwargs.get('kernel_size', 1)
+            self.dilation = kwargs.get('dilation', 1)
+            self.padding =  kwargs.get('padding', 0)
             kwargs['padding'] = 0
             self.conv = nn.Conv1d(*args, **kwargs)
 
-        def forward(self, x):
-            if self.causal:
-                x = F.pad(x, (self.padding, 0))
+        def forward(self, x, causal):
+            padding = (self.kernel_size - 1) * self.dilation if causal else self.padding
+            if causal:
+                x = F.pad(x, (padding, 0))
             else:
-                x = F.pad(x, (self.padding, self.padding))
+                x = F.pad(x, (padding, padding))
             return self.conv(x)
 
     return _Conv1d()
 
-def ConvTranspose1d(*args, causal=False, **kwargs):
+def ConvTranspose1d(*args, **kwargs):
     class _ConvTranspose1d(nn.Module):
         def __init__(self):
             super(_ConvTranspose1d, self).__init__()
-            self.causal = causal
-            kernel_size = kwargs.get('kernel_size', 1)
-            dilation = kwargs.get('dilation', 1)
-            self.padding = (kernel_size - 1) * dilation if causal else kwargs.get('padding', 0)
-            kwargs['padding'] = 0  
+            self.kernel_size = kwargs.get('kernel_size', 1)
+            self.dilation = kwargs.get('dilation', 1)
+            self.padding =  kwargs.get('padding', 0)
+            kwargs['padding'] = 0
             self.conv = nn.ConvTranspose1d(*args, **kwargs)
 
-        def forward(self, x):
-            if self.causal:
-                x = F.pad(x, (self.padding, 0))
+        def forward(self, x, causal):
+            padding = (self.kernel_size - 1) * self.dilation if causal else self.padding
+            if causal:
+                x = F.pad(x, (padding, 0))
             else:
-                x = F.pad(x, (self.padding, self.padding))
+                x = F.pad(x, (padding, padding))
             return self.conv(x)
 
     return _ConvTranspose1d()
@@ -140,19 +149,19 @@ class ConvBlock1d(nn.Module):
             out_channels=out_channels,
             kernel_size=kernel_size,
             stride=stride,
-            padding=0,
+            padding=padding,
             dilation=dilation,
         )
 
     def forward(
-            self, x: Tensor, scale_shift: Optional[Tuple[Tensor, Tensor]] = None
+            self, x: Tensor, scale_shift: Optional[Tuple[Tensor, Tensor]] = None, causal=False
     ) -> Tensor:
         x = self.groupnorm(x)
         if exists(scale_shift):
             scale, shift = scale_shift
             x = x * (scale + 1) + shift
         x = self.activation(x)
-        return self.project(x)
+        return self.project(x, causal)
 
 
 class MappingToScaleShift(nn.Module):
@@ -223,14 +232,14 @@ class ResnetBlock1d(nn.Module):
         self.to_out = (
             Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
             if in_channels != out_channels
-            else nn.Identity()
+            else Identity()
         )
 
     def forward(self, x: Tensor, mapping: Optional[Tensor] = None, causal=False) -> Tensor:
         assert_message = "context mapping required if context_mapping_features > 0"
         assert not (self.use_mapping ^ exists(mapping)), assert_message
 
-        h = self.block1(x, causal)
+        h = self.block1(x, causal=causal)
 
         scale_shift = None
         if self.use_mapping:
@@ -238,7 +247,7 @@ class ResnetBlock1d(nn.Module):
 
         h = self.block2(h, scale_shift=scale_shift, causal=causal)
 
-        return h + self.to_out(x)
+        return h + self.to_out(x, causal)
 
 
 class Patcher(nn.Module):
@@ -515,16 +524,10 @@ class Transformer1d(nn.Module):
             context_features: Optional[int] = None,
     ):
         super().__init__()
-
-        self.to_in = nn.Sequential(
-            nn.GroupNorm(num_groups=32, num_channels=channels, eps=1e-6, affine=True),
-            Conv1d(
-                in_channels=channels,
-                out_channels=channels,
-                kernel_size=1,
-            ),
-            Rearrange("b c t -> b t c"),
-        )
+        
+        self.group_norm = nn.GroupNorm(num_groups=32, num_channels=channels, eps=1e-6, affine=True)
+        self.conv1d = Conv1d(in_channels=channels, out_channels=channels, kernel_size=1)
+        self.rearrange_in = Rearrange("b c t -> b t c")
 
         self.blocks = nn.ModuleList(
             [
@@ -538,22 +541,18 @@ class Transformer1d(nn.Module):
                 for i in range(num_layers)
             ]
         )
-
-        self.to_out = nn.Sequential(
-            Rearrange("b t c -> b c t"),
-            Conv1d(
-                in_channels=channels,
-                out_channels=channels,
-                kernel_size=1,
-            ),
-        )
+        
+        self.rearrange_out =  Rearrange("b t c -> b c t")
 
     def forward(self, x: Tensor, *, context: Optional[Tensor] = None, context_mask: Optional[Tensor] = None,
                 causal=False) -> Tensor:
-        x = self.to_in(x)
+        x = self.group_norm(x)
+        x = self.conv1d(x, causal)
+        x = self.rearrange_in(x)
         for block in self.blocks:
             x = block(x, context=context, context_mask=context_mask, causal=causal)
-        x = self.to_out(x)
+        x = self.rearrange_out(x)
+        x = self.conv1d(x, causal)
         return x
 
 
@@ -646,14 +645,14 @@ class DownsampleBlock1d(nn.Module):
     ) -> Union[Tuple[Tensor, List[Tensor]], Tensor]:
 
         if self.use_pre_downsample:
-            x = self.downsample(x)
+            x = self.downsample(x, causal)
 
         if self.use_context and exists(channels):
             x = torch.cat([x, channels], dim=1)
 
         skips = []
         for block in self.blocks:
-            x = block(x, mapping=mapping)
+            x = block(x, mapping=mapping, causal=causal)
             skips += [x] if self.use_skip else []
 
         if self.use_transformer:
@@ -661,10 +660,10 @@ class DownsampleBlock1d(nn.Module):
             skips += [x] if self.use_skip else []
 
         if not self.use_pre_downsample:
-            x = self.downsample(x)
+            x = self.downsample(x, causal)
 
         if self.use_extract:
-            extracted = self.to_extracted(x)
+            extracted = self.to_extracted(x, causal)
             return x, extracted
 
         return (x, skips) if self.use_skip else x
@@ -764,20 +763,34 @@ class UpsampleBlock1d(nn.Module):
     ) -> Union[Tuple[Tensor, Tensor], Tensor]:
 
         if self.use_pre_upsample:
-            x = self.upsample(x)
+            if isinstance(self.upsample, nn.Sequential):
+                for layer in self.upsample:
+                    if isinstance(layer, Conv1d()):
+                        x = layer(x, causal=causal)
+                    else:
+                        x = layer(x)
+            else:
+                x = self.upsample(x, causal=causal)
 
         for block in self.blocks:
             x = self.add_skip(x, skip=skips.pop()) if exists(skips) else x
-            x = block(x, mapping=mapping)
+            x = block(x, mapping=mapping, causal=causal)
 
         if self.use_transformer:
             x = self.transformer(x, context=embedding, context_mask=embedding_mask, causal=causal)
 
         if not self.use_pre_upsample:
-            x = self.upsample(x)
+            if isinstance(self.upsample, nn.Sequential):
+                for layer in self.upsample:
+                    if isinstance(layer, Conv1d()):
+                        x = layer(x, causal=causal)
+                    else:
+                        x = layer(x)
+            else:
+                x = self.upsample(x, causal=causal)
 
         if self.use_extract:
-            extracted = self.to_extracted(x)
+            extracted = self.to_extracted(x, causal=causal)
             return x, extracted
 
         return x
@@ -842,8 +855,8 @@ class BottleneckBlock1d(nn.Module):
             embedding_mask: Optional[Tensor] = None,
             causal: Optional[bool] = False
     ) -> Tensor:
-        x = self.pre_block(x, mapping=mapping)
+        x = self.pre_block(x, mapping=mapping, causal=causal)
         if self.use_transformer:
             x = self.transformer(x, context=embedding, context_mask=embedding_mask, causal=causal)
-        x = self.post_block(x, mapping=mapping)
+        x = self.post_block(x, mapping=mapping, causal=causal)
         return x
