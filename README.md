@@ -31,7 +31,7 @@ ckpt_path =  'your ckpt path'
 jen1 = Jen1(ckpt_path)
 
 prompt = 'a beautiful song'
-samples = Jen1.generate(prompt)
+samples = jen1.generate(prompt)
 ```
 
 ### Training
