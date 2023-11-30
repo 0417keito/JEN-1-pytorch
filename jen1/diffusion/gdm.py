@@ -109,7 +109,7 @@ class GaussianDiffusion(nn.Module):
         posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def model_predictions(self, x, t, model, conditioning=None, clip_x_start=False):
+    def model_predictions(self, x, t, model, conditioning=None, clip_x_start=False, causal=False):
         with autocast(enabled=self.use_fp16):
             model_out = model(x, t, embedding=conditioning['cross_attn_cond'],
                             embedding_mask=conditioning['cross_attn_masks'],
@@ -118,7 +118,7 @@ class GaussianDiffusion(nn.Module):
                             features=conditioning['global_cond'],
                             channels_list=[conditioning['input_concat_cond']],
                             batch_cfg=self.batch_cfg, scale_cfg=self.scale_cfg,
-                            causal=False)
+                            causal=causal)
         maybe_clip = partial(torch.clamp, min=-1, max=1.) if clip_x_start else identity
 
         if self.objective == 'noise':
@@ -173,7 +173,7 @@ class GaussianDiffusion(nn.Module):
         return ret
 
     @torch.no_grad()
-    def ddim_sample(self, model, shape, conditioning, return_all_timesteps=False):
+    def ddim_sample(self, model, shape, conditioning, return_all_timesteps=False, causal=False):
         batch = shape[0]
         device = self.device
         total_timesteps = self.num_timesteps
@@ -193,7 +193,7 @@ class GaussianDiffusion(nn.Module):
 
         for time, time_next in tqdm(time_pairs, desc='sampling loop time stes'):
             time_cond = torch.full((batch,), time, device=device, dtype=torch.long)
-            pred_noise, x_start = self.model_predictions(audio, time_cond, model, conditioning, clip_x_start=True)
+            pred_noise, x_start = self.model_predictions(audio, time_cond, model, conditioning, clip_x_start=True, causal=causal)
 
             audios.append(audio)
 
@@ -217,9 +217,9 @@ class GaussianDiffusion(nn.Module):
         return ret
 
     @torch.no_grad()
-    def sample(self, model, shape, conditioning, return_all_timesteps=False):
+    def sample(self, model, shape, conditioning, return_all_timesteps=False, causal=False):
         sample_fn = self.p_sample_loop if not self.is_ddim_sampling else self.ddim_sample
-        return sample_fn(model, shape, conditioning, return_all_timesteps=return_all_timesteps)
+        return sample_fn(model, shape, conditioning, return_all_timesteps=return_all_timesteps, causal=causal)
 
     def q_sample(self, x_start, t, noise=None):
         '''
