@@ -25,7 +25,6 @@ class FixedEmbedding(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         batch_size, length, device = *x.shape[0:2], x.device
-        print('length', length)
         assert_message = "Input sequence length must be <= max_length"
         assert length <= self.max_length, assert_message
         position = torch.arange(length, device=device)
