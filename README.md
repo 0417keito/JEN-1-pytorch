@@ -36,7 +36,7 @@ samples = Jen1.generate(prompt)
 
 ### Training
 ```commandline
-python -m torch.distributed.launch train.py
+torchrun train.py
 ```
 
 ### Dataset format
@@ -78,7 +78,7 @@ please see utils/config.py and utils/conditioner_config.py
 coming soon !
 
 ## 🙏Appreciation
-[Dr Adam Files](https://github.com/adamfils) - for support and brought this to my attention.
+[Dr Adam Fils](https://github.com/adamfils) - for support and brought this to my attention.
 
 ## ⭐️Show Your Support
 
