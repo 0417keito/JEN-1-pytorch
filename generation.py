@@ -1,4 +1,6 @@
 import torch
+import random
+
 from utils.script_util import create_multi_conditioner, load_checkpoint
 from utils.config import Config
 
@@ -15,7 +17,7 @@ class Jen1():
                  sample_rate = 48000, 
                  cross_attn_cond_ids=['prompt'], 
                  global_cond_ids= [],
-                 input_concat_ids= []):
+                 input_concat_ids= ['masked_input', 'mask']):
         self.ckpt_path = ckpt_path
         self.device = device
         self.sample_rate = sample_rate
@@ -27,7 +29,7 @@ class Jen1():
         
         self.audio_encoder = EncodecModel.encodec_model_48khz()
         
-    def generate(self, prompt, steps=100, batch_size=1, seconds=30):
+    def generate(self, prompt, steps=100, batch_size=1, seconds=30, task='text_guided'):
         sample_length = seconds * self.sample_rate
         shape = (batch_size, self.audio_encoder.channels, sample_length)
         wav = torch.randn(shape)
@@ -41,33 +43,70 @@ class Jen1():
                                       embedding_scale=diffusion_config.embedding_scale,
                                       batch_cfg=diffusion_config.batch_cfg, scale_cfg=diffusion_config.scale_cfg,
                                       sampling_timesteps=steps, use_fp16=False)
-        model_config.context_channels = []
+        
         config_dict = {k: v for k, v in model_config.__dict__.items() if not k.startswith('__') and not callable(v)}
         context_embedding_features = config_dict.pop('context_embedding_features', None)
         context_embedding_max_length = config_dict.pop('context_embedding_max_length', None)
+        
         model = UNetCFG1d(context_embedding_features=context_embedding_features, 
                      context_embedding_max_length=context_embedding_max_length, 
                      **config_dict).to(self.device)
+        
         model, _, _, _ = load_checkpoint(self.ckpt_path, model)
         model.eval()
         diffusion.eval()
+        
         with torch.no_grad():
-            print('wav.shape:', wav.shape)
             encoded_frames = self.audio_encoder.encode(wav)
-            print('encoded_frames.shape:', encoded_frames[0][0].shape)
             codes = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)
             codes = codes.transpose(0, 1)
             emb = self.audio_encoder.quantizer.decode(codes)
+            
             batch_metadata = [{'prompt': prompt} for _ in range(batch_size)]
             conditioning = self.conditioner(batch_metadata, self.device)
+            masked_input, mask, causal = self.random_mask(emb, emb.shape[2], task)
+            conditioning['masked_input'] = masked_input
+            conditioning['mask'] = mask
             conditioning = self.get_conditioning(conditioning)
             shape = emb.shape
             sample_embs = diffusion.sample(model, shape, conditioning)
-            print('sample_embs.shape:', sample_embs.shape)
             samples = self.audio_encoder.decoder(sample_embs)
-            print('samples.shape', samples.shape)
         
         return samples
+    
+    def random_mask(self, sequence, max_mask_length, task):
+        b, _, sequence_length = sequence.size()
+        
+        masks = []
+        if task.lower() == 'text_guided':
+            mask = torch.zeros((1, 1, sequence_length)).to(sequence.device)
+            masks.append(mask)
+            causal = random.choices([True, False])
+            causal = False
+        elif task.lower() == 'music_inpaint':
+            mask_length = random.randint(sequence_length*0.2, sequence_length*0.8)
+            mask_start = random.randint(0, sequence_length-mask_length)
+            
+            mask = torch.ones((1, 1, sequence_length))
+            mask[:, :, mask_start:mask_start+mask_length] = 0
+            mask = mask.to(sequence.device)
+            
+            masks.append(mask)
+            causal = False
+        elif task.lower() == 'music_cont':
+            mask_length = random.randint(sequence_length*0.2, sequence_length*0.8)
+            
+            mask = torch.onse((1, 1, sequence_length))
+            mask[:, :, -mask_length:] = 0
+            masks.append(mask)
+            causal = True
+        
+        masks = masks * b
+        mask = torch.cat(masks, dim=0).to(sequence.device)
+        
+        masked_sequence = sequence * mask
+        
+        return masked_sequence, mask, causal
             
     def get_conditioning(self, cond):
         cross_attention_input = None
