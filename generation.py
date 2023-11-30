@@ -1,9 +1,8 @@
 import torch
-from utils.script_util import create_model_and_diffusion, create_multi_conditioner, load_checkpoint
+from utils.script_util import create_multi_conditioner, load_checkpoint
 from utils.config import Config
 
 from encodec import EncodecModel
-from encodec.utils import convert_audio
 
 from jen1.diffusion.gdm import GaussianDiffusion
 from jen1.model.model import UNetCFG1d
