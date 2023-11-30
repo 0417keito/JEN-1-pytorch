@@ -49,10 +49,7 @@ class Jen1():
         model = UNetCFG1d(context_embedding_features=context_embedding_features, 
                      context_embedding_max_length=context_embedding_max_length, 
                      **config_dict).to(self.device)
-        
-        
-        model, diffusion = create_model_and_diffusion(self.config, steps)
-        #model, _, _, _ = load_checkpoint(self.ckpt_path, model)
+        model, _, _, _ = load_checkpoint(self.ckpt_path, model)
         model.eval()
         diffusion.eval()
         with torch.no_grad():
