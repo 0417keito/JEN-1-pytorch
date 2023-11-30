@@ -94,7 +94,6 @@ class MusicDataset(Dataset):
         model = EncodecModel.encodec_model_48khz()
         chunk = convert_audio(chunk, sr, model.sample_rate, model.channels)
         chunk = chunk.unsqueeze(0)
-        
         with torch.no_grad():
             encoded_frames = model.encode(chunk)
         chunk = chunk.mean(0, keepdim=True)
