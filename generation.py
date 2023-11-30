@@ -69,7 +69,7 @@ class Jen1():
             conditioning['mask'] = mask
             conditioning = self.get_conditioning(conditioning)
             shape = emb.shape
-            sample_embs = diffusion.sample(model, shape, conditioning)
+            sample_embs = diffusion.sample(model, shape, conditioning, causal)
             samples = self.audio_encoder.decoder(sample_embs)
         
         return samples
