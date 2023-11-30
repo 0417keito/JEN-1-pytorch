@@ -25,7 +25,7 @@ class GaussianDiffusion(nn.Module):
             batch_cfg=False,
             scale_cfg=False,
             sampling_timesteps=None,
-            ddim_sampling_eta=0.,
+            ddim_sampling_eta=0.1,
             use_fp16=False,
     ):
         super().__init__()
@@ -114,7 +114,7 @@ class GaussianDiffusion(nn.Module):
             model_out = model(x, t, embedding=conditioning['cross_attn_cond'],
                             embedding_mask=conditioning['cross_attn_masks'],
                             embedding_scale=self.embedding_scale,
-                            embedding_mask_prob=self.cfg_dropout_proba,
+                            embedding_mask_proba=self.cfg_dropout_proba,
                             features=conditioning['global_cond'],
                             channels_list=[conditioning['input_concat_cond']],
                             batch_cfg=self.batch_cfg, scale_cfg=self.scale_cfg,
@@ -173,9 +173,13 @@ class GaussianDiffusion(nn.Module):
         return ret
 
     @torch.no_grad()
-    def ddim_sample(self, model, shape, return_all_timesteps=False):
-        batch, device, total_timesteps, sampling_timesteps, eta, objective = shape[
-            0], self.device, self.num_timesteps, self.sampling_steps, self.sampling_timesteps, self.ddim_sampling_eta, self.objective
+    def ddim_sample(self, model, shape, conditioning, return_all_timesteps=False):
+        batch = shape[0]
+        device = self.device
+        total_timesteps = self.num_timesteps
+        sampling_timesteps = self.sampling_timesteps
+        eta = self.ddim_sampling_eta
+        objective = self.objective
 
         times = torch.linspace(-1, total_timesteps - 1,
                                steps=sampling_timesteps + 1)  # [-1, 0, 1, 2, ..., T-1] when sampling_timesteps == total_timesteps
@@ -189,7 +193,7 @@ class GaussianDiffusion(nn.Module):
 
         for time, time_next in tqdm(time_pairs, desc='sampling loop time stes'):
             time_cond = torch.full((batch,), time, device=device, dtype=torch.long)
-            pred_noise, x_start = self.model_predictions(audio, time_cond, model, clip_x_start=True)
+            pred_noise, x_start = self.model_predictions(audio, time_cond, model, conditioning, clip_x_start=True)
 
             audios.append(audio)
 
