@@ -1,10 +1,13 @@
 import torch
 import random
+import numpy as np
+import math
 
 from utils.script_util import create_multi_conditioner, load_checkpoint
 from utils.config import Config
 
 from encodec import EncodecModel
+from encodec.utils import convert_audio
 
 from jen1.diffusion.gdm import GaussianDiffusion
 from jen1.model.model import UNetCFG1d
@@ -29,10 +32,7 @@ class Jen1():
         
         self.audio_encoder = EncodecModel.encodec_model_48khz()
         
-    def generate(self, prompt, steps=100, batch_size=1, seconds=30, task='text_guided'):
-        sample_length = seconds * self.sample_rate
-        shape = (batch_size, self.audio_encoder.channels, sample_length)
-        wav = torch.randn(shape)
+    def get_model_and_diffusion(self, steps):
         diffusion_config = self.config.diffusion_config.gaussian_diffusion
         model_config = self.config.model_config
         betas = get_beta_schedule(diffusion_config.noise_schedule, diffusion_config.steps)
@@ -56,57 +56,84 @@ class Jen1():
         model.eval()
         diffusion.eval()
         
+        return diffusion, model
+        
+    def generate(self, prompt, seed=-1, steps=100, batch_size=1, seconds=30,
+                 task='text_guided', init_audio=None, init_audio_sr=None, inpainting_scope=None):
+        
+        seed = seed if seed != -1 else np.random.randint(0, 2**32 -1)
+        torch.manual_seed(seed)
+        self.batch_size = batch_size
+        diffusion, model = self.get_model_and_diffusion(steps)
+        
+        if init_audio is not None and init_audio.size() != 3:
+            init_audio = init_audio.repeat(batch_size, 1, 1)
+        
+        if init_audio is None:
+            flag = True
+            sample_length = seconds * self.sample_rate
+            shape = (batch_size, self.audio_encoder.channels, sample_length)
+            init_audio = torch.zeros(shape)
+            init_audio_sr = self.sample_rate
+        
+        init_audio = convert_audio(init_audio, init_audio_sr, self.sample_rate, self.audio_encoder.channels)
+
+        if task == 'text_guided':
+            mask = self.get_mask(sample_length, 0, seconds, batch_size)
+            masked_input = init_audio * mask
+            causal = False
+        elif task == 'music_inpaint':
+            mask = self.get_mask(sample_length, inpainting_scope[0], inpainting_scope[1], batch_size)
+            inpaint_input = init_audio * mask
+            masked_input = inpaint_input
+            causal = False
+        elif task == 'music_cont':
+            cont_length = sample_length - init_audio.size(2)
+            cont_start = init_audio.size(2)
+            mask = self.get_mask(sample_length, cont_start/self.sample_rate, seconds, batch_size)
+            cont_audio = torch.randn(batch_size, self.audio_encoder.channels, cont_length, device=self.device)
+            cont_audio = cont_audio * mask[:, cont_start:]
+            masked_input = torch.cat([init_audio, cont_audio], dim=2)     
+            causal = True   
+        
         with torch.no_grad():
-            encoded_frames = self.audio_encoder.encode(wav)
-            codes = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)
-            codes = codes.transpose(0, 1)
-            emb = self.audio_encoder.quantizer.decode(codes)
+            init_emb = self.get_emb(init_audio).to(self.device)
+            emb_shape = init_emb.shape
+            if flag:
+                init_emb = None
+            masked_emb = self.get_emb(masked_input).to(self.device)
+            mask = mask.to(self.device)
+            
+            mask = torch.nn.functional.interpolate(mask, size=(emb_shape[2]))
             
             batch_metadata = [{'prompt': prompt} for _ in range(batch_size)]
             conditioning = self.conditioner(batch_metadata, self.device)
-            masked_input, mask, causal = self.random_mask(emb, emb.shape[2], task)
-            conditioning['masked_input'] = masked_input
+            conditioning['masked_input'] = masked_emb
             conditioning['mask'] = mask
             conditioning = self.get_conditioning(conditioning)
-            shape = emb.shape
-            sample_embs = diffusion.sample(model, shape, conditioning, causal)
+            
+            sample_embs = diffusion.sample(model, emb_shape, conditioning, causal, init_data=init_emb)
             samples = self.audio_encoder.decoder(sample_embs)
         
         return samples
     
-    def random_mask(self, sequence, max_mask_length, task):
-        b, _, sequence_length = sequence.size()
-        
+    def get_mask(self, sample_size, start, end, batch_size):
         masks = []
-        if task.lower() == 'text_guided':
-            mask = torch.zeros((1, 1, sequence_length)).to(sequence.device)
-            masks.append(mask)
-            causal = random.choices([True, False])
-            causal = False
-        elif task.lower() == 'music_inpaint':
-            mask_length = random.randint(sequence_length*0.2, sequence_length*0.8)
-            mask_start = random.randint(0, sequence_length-mask_length)
-            
-            mask = torch.ones((1, 1, sequence_length))
-            mask[:, :, mask_start:mask_start+mask_length] = 0
-            mask = mask.to(sequence.device)
-            
-            masks.append(mask)
-            causal = False
-        elif task.lower() == 'music_cont':
-            mask_length = random.randint(sequence_length*0.2, sequence_length*0.8)
-            
-            mask = torch.onse((1, 1, sequence_length))
-            mask[:, :, -mask_length:] = 0
-            masks.append(mask)
-            causal = True
-        
-        masks = masks * b
-        mask = torch.cat(masks, dim=0).to(sequence.device)
-        
-        masked_sequence = sequence * mask
-        
-        return masked_sequence, mask, causal
+        maskstart = math.floor(start * self.sample_rate)
+        maskend = math.ceil(end * self.sample_rate)
+        mask = torch.ones((1, 1, sample_size))
+        mask[:, :, maskstart:maskend] = 0
+        masks.append(mask)
+        mask = torch.concat(masks * batch_size, dim=0)
+    
+        return mask
+    
+    def get_emb(self, audio):
+        encoded_frames = self.audio_encoder.encode(audio)
+        codes = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)
+        codes = codes.transpose(0, 1)
+        emb = self.audio_encoder.quantizer.decode(codes)
+        return emb    
             
     def get_conditioning(self, cond):
         cross_attention_input = None
@@ -128,9 +155,20 @@ class Jen1():
                 global_cond = global_cond.squeeze(1)
         
         if len(self.input_concat_ids) > 0:
+            concated_tensors = []
+            for key in self.input_concat_ids:
+                tensor = cond[key][0]
+                
+                if tensor.ndim == 2:
+                    tensor = tensor.unsqueeze(0)
+                    tensor = tensor.expand(self.batch_size, -1, -1)
+                
+                concated_tensors.append(tensor)
             # Concatenate all input concat conditioning inputs over the channel dimension
             # Assumes that the input concat conditioning inputs are of shape (batch, channels, seq)
-            input_concat_cond = torch.cat([cond[key][0] for key in self.input_concat_ids], dim=1)
+            #input_concat_cond = torch.cat([cond[key][0] for key in self.input_concat_ids], dim=1)
+            #For some reason, the BATCH component is removed. I don't know why.
+            input_concat_cond = torch.cat(concated_tensors, dim=1)
             
         return {
             "cross_attn_cond": cross_attention_input,
