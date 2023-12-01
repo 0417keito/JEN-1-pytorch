@@ -25,7 +25,7 @@ class GaussianDiffusion(nn.Module):
             batch_cfg=False,
             scale_cfg=False,
             sampling_timesteps=None,
-            ddim_sampling_eta=0.1,
+            ddim_sampling_eta=1.,
             use_fp16=False,
     ):
         super().__init__()
@@ -159,8 +159,10 @@ class GaussianDiffusion(nn.Module):
         return pred_audio, x_start
 
     @torch.no_grad()
-    def p_sample_loop(self, model, shape, conditioning, return_all_timesteps=False):
+    def p_sample_loop(self, model, shape, conditioning, return_all_timesteps=False, init_data=None):
         audio = torch.randn(shape, device=self.device)
+        if init_data is not None:
+            audio = audio + init_data
         audios = [audio]
 
         x_start = None
@@ -173,7 +175,7 @@ class GaussianDiffusion(nn.Module):
         return ret
 
     @torch.no_grad()
-    def ddim_sample(self, model, shape, conditioning, return_all_timesteps=False, causal=False):
+    def ddim_sample(self, model, shape, conditioning, return_all_timesteps=False, causal=False, init_data=None):
         batch = shape[0]
         device = self.device
         total_timesteps = self.num_timesteps
@@ -187,6 +189,8 @@ class GaussianDiffusion(nn.Module):
         time_pairs = list(zip(times[:-1], times[1:]))
 
         audio = torch.randn(shape, device=device)
+        if init_data is not None:
+            audio = audio + init_data
         audios = [audio]
 
         x_start = None
@@ -217,9 +221,9 @@ class GaussianDiffusion(nn.Module):
         return ret
 
     @torch.no_grad()
-    def sample(self, model, shape, conditioning, return_all_timesteps=False, causal=False):
+    def sample(self, model, shape, conditioning, return_all_timesteps=False, causal=False, init_data=None):
         sample_fn = self.p_sample_loop if not self.is_ddim_sampling else self.ddim_sample
-        return sample_fn(model, shape, conditioning, return_all_timesteps=return_all_timesteps, causal=causal)
+        return sample_fn(model, shape, conditioning, return_all_timesteps=return_all_timesteps, causal=causal, init_data=init_data)
 
     def q_sample(self, x_start, t, noise=None):
         '''
