@@ -6,7 +6,7 @@ from .conditioner_config import ConditionerConfig
 class DataConfig:
     dataset_dir = ''
     sr = 48000
-    channels = 1
+    channels = 2
     # min_duration, max_duration, and sample_duration are all listed in seconds.
     min_duration = 0
     max_duration = 300
@@ -45,10 +45,10 @@ class DiffusionConfig:
 class ModelConfig: 
     in_channels = 128 #number of potential embedded channels to be entered
     channels = 128
-    multipliers = [1, 1, 1, 1, 2, 2, 4, 4, 8, 8] # indicates how many times the input channels of each block of UNet are in_channels. 
+    multipliers = [1, 1, 1, 2, 2, 4, 4, 4, 8, 8] # indicates how many times the input channels of each block of UNet are in_channels. 
     factors = [1, 2, 1, 2, 1, 2, 1, 2, 1] # convolution layer parameters for each block
     num_blocks = [1, 3, 3, 3, 3, 3, 3, 3, 1] # number of ResNet Blocks in each block
-    attentions = [0, 0, 0, 0, 1, 0, 1, 0, 0] # number of Attention layers in each block
+    attentions = [0, 0, 0, 0, 0, 1, 1, 1, 1] # number of Attention layers in each block
     patch_size = 1
     resnet_groups = 8
     use_context_time = True
