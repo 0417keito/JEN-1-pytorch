@@ -36,6 +36,8 @@ class Jen1():
         diffusion_config = self.config.diffusion_config.gaussian_diffusion
         model_config = self.config.model_config
         betas = get_beta_schedule(diffusion_config.noise_schedule, diffusion_config.steps)
+        betas = betas.to(self.device)
+        betas = betas.to(torch.float32)
         
         diffusion = GaussianDiffusion(steps=diffusion_config.steps, betas=betas,
                                       objective=diffusion_config.objective, loss_type=diffusion_config.loss_type,
@@ -52,7 +54,7 @@ class Jen1():
                      context_embedding_max_length=context_embedding_max_length, 
                      **config_dict).to(self.device)
         
-        model, _, _, _ = load_checkpoint(self.ckpt_path, model)
+        #model, _, _, _ = load_checkpoint(self.ckpt_path, model)
         model.eval()
         diffusion.eval()
         

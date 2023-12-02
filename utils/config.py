@@ -10,7 +10,7 @@ class DataConfig:
     # min_duration, max_duration, and sample_duration are all listed in seconds.
     min_duration = 0
     max_duration = 300
-    sample_duration = 10 # This length determines the length of the latent variable. Adjust the length of the latent variable so that it is 2**(num_layers).
+    sample_duration = 32 # This length determines the length of the latent variable. Adjust the length of the latent variable so that it is 2**(num_layers).
     aug_shift = True
     batch_size = 1 
     shuffle = True
