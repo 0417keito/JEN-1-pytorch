@@ -12,6 +12,7 @@ from torch.backends.cuda import sdp_kernel
 from torch.nn import functional as F
 
 from utils.script_util import exists, default
+from utils.module import crop
 
 '''
 def Conv1d(*args, **kwargs) -> nn.Module:
@@ -729,6 +730,7 @@ class UpsampleBlock1d(nn.Module):
             )
 
     def add_skip(self, x: Tensor, skip: Tensor) -> Tensor:
+        x, skip = crop(x, skip)
         return torch.cat([x, skip * self.skip_scale], dim=1)
 
     def forward(
