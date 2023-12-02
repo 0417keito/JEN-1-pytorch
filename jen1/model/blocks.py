@@ -16,11 +16,10 @@ from utils.script_util import exists, default
 '''
 def Conv1d(*args, **kwargs) -> nn.Module:
     return nn.Conv1d(*args, **kwargs)
-
+'''
 
 def ConvTranspose1d(*args, **kwargs) -> nn.Module:
     return nn.ConvTranspose1d(*args, **kwargs)
-'''
 
 def Identity():
     class _Identity(nn.Module):
@@ -42,34 +41,15 @@ def Conv1d(*args, **kwargs):
             self.conv = nn.Conv1d(*args, **kwargs)
 
         def forward(self, x, causal):
-            padding = (self.kernel_size - 1) * self.dilation if causal else self.padding
+            padding = (self.kernel_size - 1) * self.dilation
             if causal:
                 x = F.pad(x, (padding, 0))
             else:
-                x = F.pad(x, (padding, padding))
+                half_padding = padding // 2
+                x = F.pad(x, (half_padding, half_padding))
             return self.conv(x)
 
     return _Conv1d()
-
-def ConvTranspose1d(*args, **kwargs):
-    class _ConvTranspose1d(nn.Module):
-        def __init__(self):
-            super(_ConvTranspose1d, self).__init__()
-            self.kernel_size = kwargs.get('kernel_size', 1)
-            self.dilation = kwargs.get('dilation', 1)
-            self.padding =  kwargs.get('padding', 0)
-            kwargs['padding'] = 0
-            self.conv = nn.ConvTranspose1d(*args, **kwargs)
-
-        def forward(self, x, causal):
-            padding = (self.kernel_size - 1) * self.dilation if causal else self.padding
-            if causal:
-                x = F.pad(x, (padding, 0))
-            else:
-                x = F.pad(x, (padding, padding))
-            return self.conv(x)
-
-    return _ConvTranspose1d()
 
 def Downsample1d(
         in_channels: int, out_channels: int, factor: int, kernel_multiplier: int = 2
@@ -89,14 +69,14 @@ def Upsample1d(
         in_channels: int, out_channels: int, factor: int, use_nearest: bool = False
 ) -> nn.Module:
     if factor == 1:
-        return Conv1d(
+        return nn.Conv1d(
             in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding=1
         )
 
     if use_nearest:
         return nn.Sequential(
             nn.Upsample(scale_factor=factor, mode="nearest"),
-            Conv1d(
+            nn.Conv1d(
                 in_channels=in_channels,
                 out_channels=out_channels,
                 kernel_size=3,
@@ -104,7 +84,7 @@ def Upsample1d(
             ),
         )
     else:
-        return ConvTranspose1d(
+        return nn.ConvTranspose1d(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=factor * 2,
@@ -763,14 +743,7 @@ class UpsampleBlock1d(nn.Module):
     ) -> Union[Tuple[Tensor, Tensor], Tensor]:
 
         if self.use_pre_upsample:
-            if isinstance(self.upsample, nn.Sequential):
-                for layer in self.upsample:
-                    if isinstance(layer, Conv1d()):
-                        x = layer(x, causal=causal)
-                    else:
-                        x = layer(x)
-            else:
-                x = self.upsample(x, causal=causal)
+            x = self.upsample(x)
 
         for block in self.blocks:
             x = self.add_skip(x, skip=skips.pop()) if exists(skips) else x
@@ -780,14 +753,7 @@ class UpsampleBlock1d(nn.Module):
             x = self.transformer(x, context=embedding, context_mask=embedding_mask, causal=causal)
 
         if not self.use_pre_upsample:
-            if isinstance(self.upsample, nn.Sequential):
-                for layer in self.upsample:
-                    if isinstance(layer, Conv1d()):
-                        x = layer(x, causal=causal)
-                    else:
-                        x = layer(x)
-            else:
-                x = self.upsample(x, causal=causal)
+            x = self.upsample(x)
 
         if self.use_extract:
             extracted = self.to_extracted(x, causal=causal)
