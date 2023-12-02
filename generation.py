@@ -54,7 +54,7 @@ class Jen1():
                      context_embedding_max_length=context_embedding_max_length, 
                      **config_dict).to(self.device)
         
-        #model, _, _, _ = load_checkpoint(self.ckpt_path, model)
+        model, _, _, _ = load_checkpoint(self.ckpt_path, model)
         model.eval()
         diffusion.eval()
         
