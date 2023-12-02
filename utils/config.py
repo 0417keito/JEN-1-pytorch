@@ -12,10 +12,12 @@ class DataConfig:
     max_duration = 300
     sample_duration = 32 # This length determines the length of the latent variable. Adjust the length of the latent variable so that it is 2**(num_layers).
     aug_shift = True
-    batch_size = 1 
+    batch_size = 1
+    # if your dataset has the audio and metadata json files in the same folder, set same_folder to True.
+    same_folder = False
     shuffle = True
-    train_test_split = 0.5
-    device = 'cuda' if torch.cuda.is_available else 'cpu'
+    train_test_split = 0.8
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 @dataclass
 class GDM_Config:
@@ -88,6 +90,7 @@ class Config:
     num_epoch = 100
     log_interval = 10
     eval_interval = 20
+    save_only_best = False
     is_fintuning = False
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     diffusion_type = 'gdm'

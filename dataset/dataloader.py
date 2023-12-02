@@ -13,7 +13,7 @@ from encodec.utils import convert_audio
 
 class MusicDataset(Dataset):
     def __init__(self, dataset_dir, sr, channels, min_duration, max_duration,
-                 sample_duration, aug_shift, device):
+                 sample_duration, aug_shift, device, same_folder=False):
         super().__init__()
         self.dataset_dir = dataset_dir
         self.sr = sr
@@ -23,8 +23,12 @@ class MusicDataset(Dataset):
         self.sample_duration = sample_duration
         self.aug_shift = aug_shift
         self.device = device
-        self.audio_files_dir = f'{dataset_dir}/audios'
-        self.metadatas_dir = f'{dataset_dir}/metadata'
+        if same_folder:
+            self.audio_files_dir = dataset_dir
+            self.metadatas_dir = dataset_dir
+        else:
+            self.audio_files_dir = f'{dataset_dir}/audios'
+            self.metadatas_dir = f'{dataset_dir}/metadata'
         self.init_dataset()
     
     def get_duration_sec(self, file): 
@@ -58,7 +62,7 @@ class MusicDataset(Dataset):
         shift = random.randint(-half_interval, half_interval) if self.aug_shift else 0
         offset = item * self.sample_duration + shift
         midpoint = offset + half_interval
-        assert 0 <= midpoint < self.cumsum[-1], f'Midpoint {midpoint} of item beyond total length {self.cumsum[-1]}'
+        assert 0 <= midpoint <= self.cumsum[-1], f'Midpoint {midpoint} of item beyond total length {self.cumsum[-1]}'
         index = torch.searchsorted(self.cumsum, midpoint)
         start, end = self.cumsum[index-1] if index > 0 else 0.0, self.cumsum[index]
         assert start <= midpoint <= end, f'Midpoint {midpoint} not inside interval [{start}, {end}] for index {index}'
@@ -105,7 +109,7 @@ class MusicDataset(Dataset):
         return chunk, metadata, emb
 
 def collate(batch):
-    device = 'cuda' if torch.cuda.is_available else 'cpu'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     audio, data, emb = zip(*batch)
     audio = torch.cat(audio, dim=0)
     emb = torch.cat(emb, dim=0)
@@ -121,10 +125,10 @@ def get_dataloader(dataset_folder, batch_size: int = 50, shuffle: bool = True):
 
 
 def get_dataloaders(dataset_dir, sr, channels, min_duration, max_duration, sample_duration, 
-                    aug_shift, batch_size: int = 50, shuffle: bool = True, split_ratio=0.8, device='cpu'):
+                    aug_shift, batch_size: int = 50, shuffle: bool = True, split_ratio=0.8, device='cpu', same_folder=False):
     dataset = MusicDataset(dataset_dir=dataset_dir, sr=sr, channels=channels,
                            min_duration=min_duration, max_duration=max_duration, sample_duration=sample_duration,
-                           aug_shift=aug_shift, device=device)
+                           aug_shift=aug_shift, device=device, same_folder=same_folder)
 
     # Split the dataset into train and validation
     train_size = int(split_ratio * len(dataset))

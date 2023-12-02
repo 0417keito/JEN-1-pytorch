@@ -30,6 +30,7 @@ class GaussianDiffusion(nn.Module):
     ):
         super().__init__()
         self.objective = objective
+        self.steps = steps
         self.device = device
         self.cfg_dropout_proba = cfg_dropout_proba
         self.embedding_scale = embedding_scale

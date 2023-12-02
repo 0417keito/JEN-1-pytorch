@@ -1,5 +1,6 @@
 import glob
 import os
+from enum import Enum
 from inspect import isfunction
 
 import torch
@@ -8,6 +9,13 @@ from jen1.conditioners import MultiConditioner
 from jen1.noise_schedule import get_beta_schedule
 from utils.conditioner_config import ConditionerConfig
 from utils.config import Config
+
+
+class TASK(Enum):
+    TEXT_GUIDED = 'text_guided'
+    MUSIC_INPAINT = 'music_inpaint'
+    MUSIC_CONT = 'music_cont'
+
 
 def exists(x):
     return x is not None
@@ -60,6 +68,8 @@ def save_checkpoint(model, optimizer, lr, iteration, checkpoint_path, logger):
         state_dict = model.module.state_dict()
     else:
         state_dict = model.state_dict()
+    if not os.path.exists(os.path.dirname(checkpoint_path)):
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     torch.save({'model': state_dict,
                 'iteration': iteration,
                 'optimizer': optimizer.state_dict(),
@@ -69,7 +79,7 @@ def save_checkpoint(model, optimizer, lr, iteration, checkpoint_path, logger):
 def load_checkpoint(checkpoint_path, model, logger=None, optimizer=None):
     assert os.path.isfile(checkpoint_path)
     checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
-    epoch = checkpoint_dict['epoch']
+    epoch = checkpoint_dict['iteration']
     learning_rate = checkpoint_dict['learning_rate']
     if optimizer is not None:
         optimizer.load_state_dict(checkpoint_dict['optimizer'])

@@ -16,7 +16,7 @@ from jen1.noise_schedule import get_beta_schedule
 class Jen1():
     def __init__(self, 
                  ckpt_path, 
-                 device='cuda' if torch.cuda.is_available else 'cpu',
+                 device='cuda' if torch.cuda.is_available() else 'cpu',
                  sample_rate = 48000, 
                  cross_attn_cond_ids=['prompt'], 
                  global_cond_ids= [],
@@ -178,8 +178,34 @@ class Jen1():
             "global_cond": global_cond,
             "input_concat_cond": input_concat_cond
         }
-        
+
+
+def save_audio_tensor(audio_tensor: torch.Tensor, file_path: str, sample_rate: int = 48000):
+    print(f'Saving audio to {file_path}')
+    """
+    Saves an audio tensor to a file.
+
+    Params:
+        audio_tensor: torch.Tensor, The audio data to save.
+        file_path: str, The path to the file where the audio will be saved.
+        sample_rate: int, The sample rate of the audio data.
+
+    Returns:
+        None
+    """
+    # Ensure the tensor is on the CPU before saving
+    audio_tensor = audio_tensor.detach()
+    print(f'audio_tensor.shape: {audio_tensor.shape}')
+    if audio_tensor.ndim == 3:
+        audio_tensor = audio_tensor.squeeze(0)  # Remove the batch dimension
+    # Use torchaudio to save the tensor as an audio file
+    import torchaudio
+    torchaudio.save(file_path, audio_tensor, sample_rate)
+    print(f'Saved audio to {file_path}')
+
+
 if __name__ == '__main__':
     jen1 = Jen1(ckpt_path=None)
     prompt = 'a beautiful song'
-    samples = jen1.generate(prompt=prompt)
+    samples = jen1.generate(prompt=prompt, steps=10)
+    save_audio_tensor(samples, 'samples.wav')
