@@ -68,11 +68,10 @@ dataset_dir
 please see [config.py](https://github.com/0417keito/JEN-1-pytorch/blob/main/utils/config.py) and [conditioner_config.py](https://github.com/0417keito/JEN-1-pytorch/blob/main/utils/conditioner_config.py)
 
 ## 🧠TODO
-- [ ] Extension to [JEN-1-Composer](https://arxiv.org/abs/2310.19180)
+- [ ] Extension to [JEN-1-Composer](https://arxiv.org/abs/2310.19180) (develop in [composer branch](https://github.com/0417keito/JEN-1-pytorch/tree/composer))
 - [ ] Extension to music generation with singing voice
 - [ ] Adaptation of Consistency Model
 - [ ] In the paper, Diffusion Autoencoder was used, but I did not have much computing resources, so I used Encodec instead. So, if I can afford it, I will implement Diffusion Autoencoder.
-
 
 ## 🚀Demo
 coming soon !
