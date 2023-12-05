@@ -21,7 +21,7 @@ class DataConfig:
 class GDM_Config:
     steps = 1000 #num timesteps
     noise_schedule = 'linear' #noise scheduler
-    objective = 'v' # training objectives optional['noise', 'x0', 'v']
+    objective = 'noise' # training objectives optional['noise', 'x0', 'v']
     loss_type='l2' #loss type
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     cfg_dropout_proba = 0.2 
