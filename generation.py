@@ -35,11 +35,14 @@ class Jen1():
     def get_model_and_diffusion(self, steps):
         diffusion_config = self.config.diffusion_config.gaussian_diffusion
         model_config = self.config.model_config
-        betas = get_beta_schedule(diffusion_config.noise_schedule, diffusion_config.steps)
+        betas, alphas = get_beta_schedule(diffusion_config.noise_schedule, diffusion_config.steps)
         betas = betas.to(self.device)
         betas = betas.to(torch.float32)
+        if alphas is not None:
+            alphas.to(self.device)
+            alphas = alphas.to(torch.float32)
         
-        diffusion = GaussianDiffusion(steps=diffusion_config.steps, betas=betas,
+        diffusion = GaussianDiffusion(steps=diffusion_config.steps, betas=betas, alphas=alphas,
                                       objective=diffusion_config.objective, loss_type=diffusion_config.loss_type,
                                       device=self.device, cfg_dropout_proba=diffusion_config.cfg_dropout_proba,
                                       embedding_scale=diffusion_config.embedding_scale,
