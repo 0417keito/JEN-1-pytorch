@@ -197,12 +197,16 @@ def create_gaussian_diffusion(steps=1000,
                               use_fp16=False
                               ):
     from jen1.diffusion.gdm import GaussianDiffusion
-    betas = get_beta_schedule(noise_schedule, steps)
+    betas, alphas = get_beta_schedule(noise_schedule, steps)
     betas = betas.to(device)
     betas = betas.to(torch.float32)
+    if alphas is not None:
+        alphas = alphas.to(device)
+        alphas = alphas.to(torch.float32)
     return GaussianDiffusion(
         steps=steps,
         betas=betas,
+        alphas=alphas,
         objective=objective,
         loss_type=loss_type,
         device=device,
