@@ -27,6 +27,7 @@ class GaussianDiffusion(nn.Module):
             sampling_timesteps=None,
             ddim_sampling_eta=1.,
             use_fp16=False,
+            alphas=None
     ):
         super().__init__()
         self.objective = objective
@@ -36,7 +37,7 @@ class GaussianDiffusion(nn.Module):
         self.batch_cfg = batch_cfg
         self.scale_cfg = scale_cfg
         self.use_fp16 = use_fp16
-        assert objective in {'noise', 'x_0',
+        assert objective in {'noise', 'x0',
                              'v'}, 'objective must be either pred_noise (predict noise) or pred_x0 (predict image start) or pred_v (predict v)'
         assert loss_type in {'l1', 'l2'}
         if loss_type == 'l1':
@@ -54,7 +55,10 @@ class GaussianDiffusion(nn.Module):
         assert len(betas.shape) == 1, 'betas must be 1-D'
         assert (betas > 0).all() and (betas <= 1).all()
 
-        alphas = 1 - betas
+        if alphas is not None:
+            alphas = alphas
+        else:
+            alphas = 1 - betas
         self.alphas_cumprod = torch.cumprod(alphas, dim=0)
         self.alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.)
         assert self.alphas_cumprod_prev.shape == (self.num_timesteps,)
