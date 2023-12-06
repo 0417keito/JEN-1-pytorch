@@ -38,4 +38,4 @@ def angle_schedule(num_diffusion_timesteps, vmax=1.0, vmin=0.0):
     t = (vmax - vmin) * torch.rand(num_diffusion_timesteps) + vmin
     angle = t * math.pi / 2
     alpha, beta = torch.cos(angle), torch.sin(angle)
-    return alpha, beta
+    return beta, alpha
