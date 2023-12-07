@@ -28,18 +28,23 @@ class GDM_Config:
     embedding_scale = 0.8
     batch_cfg = True
     scale_cfg = True
+    composer = False
+    demix_list = ['bass', 'drums', 'other', 'vocals']
 
 @dataclass
-class VDM_Config: ...
-
-@dataclass
-class EDM_Config: ...
-
+class VDM_Config: 
+    loss_type='l2'
+    device='cuda' if torch.cuda.is_available() else 'cpu'
+    cfg_dropout_proba = 0.2
+    embedding_scale = 0.8
+    batch_cfg = True
+    scale_cfg = True
+    composer = False
+    
 @dataclass
 class DiffusionConfig:
     gaussian_diffusion = GDM_Config
     variational_diffusion = VDM_Config
-    elucidated_diffusion = EDM_Config
     
 @dataclass
 class ModelConfig: 
@@ -90,7 +95,7 @@ class Config:
     eval_interval = 20
     is_fintuning = False
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    diffusion_type = 'gdm'
+    diffusion_type = 'vdm'
     dataset_config = DataConfig
     diffusion_config = DiffusionConfig
     model_config = ModelConfig
