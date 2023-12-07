@@ -9,7 +9,7 @@ from utils.config import Config
 from utils.logger import summarize
 from utils.script_util import save_checkpoint
 from jen1.model.model import UNetCFG1d
-from jen1.diffusion.gdm import GaussianDiffusion
+from jen1.diffusion.gdm.gdm import GaussianDiffusion
 from jen1.conditioners import MultiConditioner
 
 class UnifiedMultiTaskTrainer(nn.Module):
@@ -87,17 +87,22 @@ class UnifiedMultiTaskTrainer(nn.Module):
         count = 0
         loss_sum = 0
         with torch.no_grad():
-            for batch_idx, (audio_emb, metadata) in enumerate(self.valid_dl):
+            for batch_idx, (audio_emb, metadata, demix_embs_dict) in enumerate(self.valid_dl):
                 b, _, _, device = *audio_emb.shape, self.config.device
                 masked_input, mask, causal = self.random_mask(audio_emb, audio_emb.shape[2], task)
                 conditioning = self.conditioner(metadata, self.config.device)
                 conditioning['masked_input'] = masked_input
                 conditioning['mask'] = mask
                 conditioning = self.get_conditioning(conditioning)
-                num_timesteps = self.diffusion.num_timesteps
-                t = torch.randint(0, num_timesteps, (b,), device=device).long()
-                with autocast(enabled=self.config.use_fp16):
-                    loss = self.diffusion.training_loosses(self.model, audio_emb, t, conditioning, causal=causal)
+                if self.config.diffusion_type == 'gdm':
+                    num_timesteps = self.diffusion.num_timesteps
+                    t = torch.randint(0, num_timesteps, (b,), device=device).long()
+                    with autocast(enabled=self.config.use_fp16):
+                        loss = self.diffusion.training_loosses(self.model, audio_emb, t, conditioning, causal=causal)
+                else:
+                    with autocast(enabled=self.config.use_fp16):
+                        loss = self.diffusion.training_loosses(self.model, audio_emb, conditioning, causal=causal)
+                    
                     loss_sum += loss
                     count += 1
                 
@@ -113,7 +118,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
             for i in range(batches_per_task):
                 weighted_loss = 0.0
                 loss_dict = {}
-                for batch_idx, (audio_emb, metadata) in enumerate(data_iter):
+                for batch_idx, (audio_emb, metadata, demix_embs_dict) in enumerate(data_iter):
                     if batch_idx >= batches_per_task:
                         break
                     weighted_loss = 0.0
@@ -169,10 +174,14 @@ class UnifiedMultiTaskTrainer(nn.Module):
         conditioning['masked_input'] = masked_input
         conditioning['mask'] = mask
         conditioning = self.get_conditioning(conditioning)
-        num_timesteps = self.diffusion.num_timesteps
-        t = torch.randint(0, num_timesteps, (b,), device=device).long()
-        with autocast(enabled=self.config.use_fp16):
-            loss = self.diffusion.training_loosses(self.model, audio_emb, t, conditioning, causal=causal)
+        if self.config.diffusion_type == 'gdm':
+            num_timesteps = self.diffusion.num_timesteps
+            t = torch.randint(0, num_timesteps, (b,), device=device).long()
+            with autocast(enabled=self.config.use_fp16):
+                loss = self.diffusion.training_loosses(self.model, audio_emb, t, conditioning, causal=causal)
+        else:
+            with autocast(enabled=self.config.use_fp16):
+                loss = self.diffusion.training_loosses(self.model, audio_emb, conditioning, causal=causal)
         return loss
             
     def random_mask(self, sequence, max_mask_length, task):
