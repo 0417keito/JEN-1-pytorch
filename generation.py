@@ -9,9 +9,10 @@ from utils.config import Config
 from encodec import EncodecModel
 from encodec.utils import convert_audio
 
-from jen1.diffusion.gdm import GaussianDiffusion
+from jen1.diffusion.gdm.gdm import GaussianDiffusion
+from jen1.diffusion.vdm.vdm import VDM
 from jen1.model.model import UNetCFG1d
-from jen1.noise_schedule import get_beta_schedule
+from jen1.diffusion.gdm.noise_schedule import get_beta_schedule
 
 class Jen1():
     def __init__(self, 
@@ -32,22 +33,31 @@ class Jen1():
         
         self.audio_encoder = EncodecModel.encodec_model_48khz()
         
-    def get_model_and_diffusion(self, steps):
-        diffusion_config = self.config.diffusion_config.gaussian_diffusion
+    def get_model_and_diffusion(self, steps, use_gdm):
+        if use_gdm:
+            diffusion_config = self.config.diffusion_config.gaussian_diffusion
+        else: 
+            diffusion_config = self.config.diffusion_config.variational_diffusion
         model_config = self.config.model_config
-        betas, alphas = get_beta_schedule(diffusion_config.noise_schedule, diffusion_config.steps)
-        betas = betas.to(self.device)
-        betas = betas.to(torch.float32)
-        if alphas is not None:
-            alphas.to(self.device)
-            alphas = alphas.to(torch.float32)
         
-        diffusion = GaussianDiffusion(steps=diffusion_config.steps, betas=betas, alphas=alphas,
-                                      objective=diffusion_config.objective, loss_type=diffusion_config.loss_type,
-                                      device=self.device, cfg_dropout_proba=diffusion_config.cfg_dropout_proba,
-                                      embedding_scale=diffusion_config.embedding_scale,
-                                      batch_cfg=diffusion_config.batch_cfg, scale_cfg=diffusion_config.scale_cfg,
-                                      sampling_timesteps=steps, use_fp16=False)
+        if use_gdm:
+            betas, alphas = get_beta_schedule(diffusion_config.noise_schedule, diffusion_config.steps)
+            betas = betas.to(self.device)
+            betas = betas.to(torch.float32)
+            if alphas is not None:
+                alphas.to(self.device)
+                alphas = alphas.to(torch.float32)
+            diffusion = GaussianDiffusion(steps=diffusion_config.steps, betas=betas, alphas=alphas,
+                                          objective=diffusion_config.objective, loss_type=diffusion_config.loss_type,
+                                          device=self.device, cfg_dropout_proba=diffusion_config.cfg_dropout_proba,
+                                          embedding_scale=diffusion_config.embedding_scale,
+                                          batch_cfg=diffusion_config.batch_cfg, scale_cfg=diffusion_config.scale_cfg,
+                                          sampling_timesteps=steps, use_fp16=False)
+        else:   
+            diffusion = VDM(loss_type=diffusion_config.loss_type, device=self.device, cfg_dropout_proba=diffusion_config.cfg_dropout_proba,
+                            embedding_scale=diffusion_config.embedding_scale, 
+                            batch_cfg=diffusion_config.batch_cfg, scale_cfg=diffusion_config.scale_cfg,
+                            use_fp16=False)
         
         config_dict = {k: v for k, v in model_config.__dict__.items() if not k.startswith('__') and not callable(v)}
         context_embedding_features = config_dict.pop('context_embedding_features', None)
@@ -57,20 +67,21 @@ class Jen1():
                      context_embedding_max_length=context_embedding_max_length, 
                      **config_dict).to(self.device)
         
-        model, _, _, _ = load_checkpoint(self.ckpt_path, model)
+        #model, _, _, _ = load_checkpoint(self.ckpt_path, model)
         model.eval()
         diffusion.eval()
         
         return diffusion, model
         
-    def generate(self, prompt, seed=-1, steps=100, batch_size=1, seconds=30,
+    def generate(self, prompt, seed=-1, steps=100, batch_size=1, seconds=30, use_gdm=False,
                  task='text_guided', init_audio=None, init_audio_sr=None, inpainting_scope=None):
         
         seed = seed if seed != -1 else np.random.randint(0, 2**32 -1)
         torch.manual_seed(seed)
         self.batch_size = batch_size
-        diffusion, model = self.get_model_and_diffusion(steps)
         
+        diffusion, model = self.get_model_and_diffusion(steps, use_gdm)
+                
         if init_audio is not None and init_audio.size() != 3:
             init_audio = init_audio.repeat(batch_size, 1, 1)
         
@@ -118,6 +129,7 @@ class Jen1():
             conditioning = self.get_conditioning(conditioning)
             
             sample_embs = diffusion.sample(model, emb_shape, conditioning, causal, init_data=init_emb)
+            sample_embs = sample_embs.to('cpu')
             samples = self.audio_encoder.decoder(sample_embs)
         
         return samples
