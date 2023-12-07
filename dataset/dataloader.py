@@ -13,7 +13,7 @@ from encodec.utils import convert_audio
 
 class MusicDataset(Dataset):
     def __init__(self, dataset_dir, sr, channels, min_duration, max_duration,
-                 sample_duration, aug_shift, device):
+                 sample_duration, aug_shift, device, composer=False):
         super().__init__()
         self.dataset_dir = dataset_dir
         self.sr = sr
@@ -25,6 +25,9 @@ class MusicDataset(Dataset):
         self.device = device
         self.audio_files_dir = f'{dataset_dir}/audios'
         self.metadatas_dir = f'{dataset_dir}/metadata'
+        self.composer = composer
+        if composer:
+            self.demix_dir = f'{dataset_dir}/htdemucs'
         self.init_dataset()
     
     def get_duration_sec(self, file): 
@@ -72,11 +75,26 @@ class MusicDataset(Dataset):
     
     def get_song_chunk(self, index, offset):
         audio_file_path = self.audio_files[index]
+        song_name = os.path.splitext(os.path.basename(audio_file_path))[0]
         wav, sr = torchaudio.load(audio_file_path)
         
         start_sample = int(offset * sr)
         end_sample = start_sample + int(self.sample_duration * sr)
         chunk = wav[:, start_sample:end_sample]
+        if self.composer:
+            demix_chunks = {}
+            demix_file_dict = {'bass': f'{self.demix_dir}/{song_name}/bass.wav',
+                               'drums': f'{self.demix_dir}/{song_name}/drums.wav',
+                               'other': f'{self.demix_dir}/{song_name}/other.wav',
+                               'vocals': f'{self.demix_dir}/{song_name}/vocals.wav'}
+            for key, value in demix_file_dict.items():
+                demix_chunk, demix_sr = torchaudio.load(value)
+                start_sample = int(offset * demix_sr)
+                end_sample = start_sample + int(self.sample_duration * demix_sr)
+                demix_chunks[key] = {'demix_chunk': demix_chunk[:, start_sample:end_sample],
+                                     'demix_sr': demix_sr}
+            
+            return chunk, sr, demix_chunks
         #chunk = chunk.unsqueeze(0)
         
         return chunk, sr
@@ -86,6 +104,10 @@ class MusicDataset(Dataset):
         
     def __getitem__(self, item):
         index, offset = self.get_index_offset(item)
+        if self.composer:
+            chunk, sr, demix_chunks = self.get_song_chunk(item, offset)
+        else:
+            chunk, sr = self.get_song_chunk(item, offset)
         chunk, sr = self.get_song_chunk(item, offset)
         song_name = os.path.splitext(os.path.basename(self.audio_files[index]))[0]
         if os.path.exists(f'{self.metadatas_dir}/{song_name}.json'):
@@ -102,16 +124,39 @@ class MusicDataset(Dataset):
         emb = model.quantizer.decode(codes)
         emb = emb.to(self.device)
         
-        return chunk, metadata, emb
+        demix_embs = None
+        if self.composer:
+            demix_embs = {}
+            for key, value in demix_chunks.items():
+                demix_chunk = value['demix_chunk']
+                demix_sr = value['demix_sr']
+                demix_chunk = convert_audio(demix_chunk, demix_sr, model.sample_rate, model.channels)
+                demix_chunk = demix_chunk.unsqueeze(0)
+                with torch.no_grad():
+                    demix_encoded_frames = model.encode(demix_chunk)
+                demix_chunk = demix_chunk.mean(0, keepdim=True)
+                demix_codes = torch.cat([encoded[0] for encoded in demix_encoded_frames], dim=-1)
+                demix_codes = demix_codes.transpose(0, 1)
+                demix_emb = model.quantizer.decode(demix_codes)
+                demix_emb = demix_emb.to(self.device)
+                demix_embs[key] = demix_emb
+        
+        return chunk, metadata, emb, demix_embs
 
 def collate(batch):
     device = 'cuda' if torch.cuda.is_available else 'cpu'
-    audio, data, emb = zip(*batch)
+    audio, data, emb, demix_embs = zip(*batch)
     audio = torch.cat(audio, dim=0)
     emb = torch.cat(emb, dim=0)
-
+    demix_embs_dict = None
     metadata = [d for d in data]
-    return (emb, metadata)
+    if demix_embs is not None:
+        demix_embs_dict = {}
+        for key, value in demix_embs_dict.items():
+            demix_embs_dict[key] = torch.cat(value, dim=0)
+        (emb, metadata, demix_embs_dict)
+
+    return (emb, metadata, demix_embs_dict)
 
 def get_dataloader(dataset_folder, batch_size: int = 50, shuffle: bool = True):
     dataset = MusicDataset(dataset_folder)
