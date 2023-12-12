@@ -53,8 +53,10 @@ class UnifiedMultiTaskTrainer(nn.Module):
         self.cross_attn_cond_ids = cross_attn_cond_ids
         self.global_cond_ids = global_cond_ids
         self.input_concat_ids = input_concat_ids
+        
+        self.best_avg_total_loss = float('inf')
     
-    def eval_all_tasks(self, rank=0):
+    def eval_all_tasks(self, epoch, rank=0):
         task_losses = {task: 0.0 for task in self.tasks}
         num_batches = {task: 0 for task in self.tasks}
         total_loss = 0.0
@@ -76,6 +78,13 @@ class UnifiedMultiTaskTrainer(nn.Module):
         
         avg_total_loss = total_loss / total_batches if total_batches > 0 else 0
         self.logger.info(f'Average total validation loss: {avg_total_loss}')
+        if avg_total_loss < self.best_avg_total_loss:
+            self.best_avg_total_loss = avg_total_loss
+            self.logger.info(f'New best average total validation loss: {self.best_avg_total_loss}')
+            save_checkpoint(model=self.model, optimizer=self.optimizer,
+                                        lr=self.config.optimizer_config.lr, iteration=epoch,
+                                        checkpoint_path=os.path.join(self.config.save_dir, f'Jen1_step_{self.global_step}_loss_{self.best_avg_total_loss}.pth'),
+                                        logger=self.logger)
         if self.rank == 0:
             scalars = {'loss/val_total': avg_total_loss}
             summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
@@ -158,12 +167,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
                         summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
                         
                     if self.global_step % self.config.eval_interval == 0:
-                        self.eval_all_tasks(rank=self.rank)
-                        save_checkpoint(model=self.model, optimizer=self.optimizer,
-                                        lr=self.config.optimizer_config.lr, iteration=epoch,
-                                        checkpoint_path=os.path.join(self.config.save_dir, f'Jen1_step_{self.global_step}.pth'),
-                                        logger=self.logger)
-                     
+                        self.eval_all_tasks(rank=self.rank, epoch=epoch)
                 self.global_step += 1   
     
     def train(self, task, audio_emb, metadata):
