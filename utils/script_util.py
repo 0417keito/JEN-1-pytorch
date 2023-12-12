@@ -177,9 +177,7 @@ def create_diffusion(config: Config, sampling_steps=None):
                                          batch_cfg=diffusion_config.batch_cfg,
                                          scale_cfg=diffusion_config.scale_cfg,
                                          sampling_steps=sampling_steps,
-                                         use_fp16=use_fp16,
-                                         composer=diffusion_config.composer,
-                                         demix_list=diffusion_config.demix_list)
+                                         use_fp16=use_fp16)
     elif diffusion_type.lower() == 'vdm':
         use_fp16 = config.use_fp16
         diffusion_config = config.diffusion_config.variational_diffusion
@@ -202,21 +200,8 @@ def create_gaussian_diffusion(steps=1000,
                               scale_cfg=False,
                               sampling_steps=None,
                               use_fp16=False,
-                              composer=False,
-                              demix_list=[],
                               ):
     from jen1.diffusion.gdm.gdm import GaussianDiffusion
-    betas_dict = None
-    if composer and demix_list is not None:
-        betas_dict = {}
-        for demix in demix_list:
-            betas, alphas = get_beta_schedule(noise_schedule, steps)
-            betas = betas.to(device)
-            betas = betas.to(torch.float32)
-            if alphas is not None:
-                alphas = alphas.to(device)
-                alphas = alphas.to(torch.float32)
-            betas_dict[demix] = {'betas': betas, 'alphas': alphas}
     
     betas, alphas = get_beta_schedule(noise_schedule, steps)
     betas = betas.to(device)
@@ -237,8 +222,6 @@ def create_gaussian_diffusion(steps=1000,
         scale_cfg=scale_cfg,
         sampling_timesteps=sampling_steps,
         use_fp16=use_fp16,
-        betas_dict=betas_dict,
-        composer=composer,
     ).to(device)
     
 def create_variational_diffusion(loss_type='l2',
