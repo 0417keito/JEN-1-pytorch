@@ -54,6 +54,14 @@ def get_latest_checkpoint(dir_path, regex='Jen1_step_*_loss_*.pth'):
     x = f_list[-1]
     return x
 
+def get_best_loss_checkpoint(dir_path, regex='Jen1_step_*_loss_*.pth'):
+    f_list = glob.glob(os.path.join(dir_path, regex))
+    f_list.sort(key=lambda f: float(re.search(r'loss_([0-9\.]+)\.pth', f).group(1)))
+    if len(f_list) == 0:
+        return 'checkpoint is None'
+    x = f_list[0] 
+    return x
+
 def cleanup_checkpoints(save_dir, keep=3):
     checkpoint_files = [f for f in os.listdir(save_dir) if f.endswith('.pth')]
     loss_file_pairs = []
