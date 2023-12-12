@@ -1,5 +1,6 @@
 import glob
 import os
+import re
 from inspect import isfunction
 
 import torch
@@ -53,6 +54,19 @@ def get_latest_checkpoint(dir_path, regex='Jen1_step_*.pth'):
     x = f_list[-1]
     return x
 
+def cleanup_checkpoints(save_dir, keep=3):
+    checkpoint_files = [f for f in os.listdir(save_dir) if f.endswith('.pth')]
+    loss_file_pairs = []
+    for file in checkpoint_files:
+        match = re.search(r'_loss_([0-9\.]+)\.pth', file)
+        if match:
+            loss = float(match.group(1))
+            loss_file_pairs.append((loss, file))
+    loss_file_pairs.sort()
+    
+    for loss, file in loss_file_pairs[keep:]:
+        os.remove(os.path.join(save_dir, file))
+
 
 def save_checkpoint(model, optimizer, lr, iteration, checkpoint_path, logger):
     logger.info(f'Saving model and optimizer state at iteration {iteration} to {checkpoint_path}')
@@ -64,6 +78,8 @@ def save_checkpoint(model, optimizer, lr, iteration, checkpoint_path, logger):
                 'epoch': iteration,
                 'optimizer': optimizer.state_dict(),
                 'learning_rate': lr}, checkpoint_path)
+    
+    cleanup_checkpoints(os.path.dirname(checkpoint_path))
 
 
 def load_checkpoint(checkpoint_path, model, logger=None, optimizer=None):
