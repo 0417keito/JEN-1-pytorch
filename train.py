@@ -94,7 +94,6 @@ def run(rank, n_gpus, config: Config):
             rank=rank,
             epoch_str=epoch_str,
             global_step=global_step,
-            # config=config,
             model=model,
             diffusion=diffusion,
             conditioner=conditioner,
