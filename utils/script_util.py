@@ -46,9 +46,9 @@ def extract(a, t, x_shape):
     return out.reshape(b, *((1,) * (len(x_shape) - 1)))
 
 
-def get_latest_checkpoint(dir_path, regex='Jen1_step_*.pth'):
+def get_latest_checkpoint(dir_path, regex='Jen1_step_*_loss_*.pth'):
     f_list = glob.glob(os.path.join(dir_path, regex))
-    f_list.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
+    f_list.sort(key=lambda f: int(re.search(r'Jen1_step_(\d+)_loss_', f).group(1)))
     if len(f_list) == 0:
         return 'checkpoint is None'
     x = f_list[-1]
