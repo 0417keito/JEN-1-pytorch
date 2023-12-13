@@ -122,6 +122,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
         for epoch in range(self.epoch_str, int(num_epoch + 1)):
             total_batches = len(self.train_dl)
             batches_per_task = total_batches // len(self.tasks)
+            assert batches_per_task >= 1, 'batches_per_task must be greater than or equal to 1'
             data_iter = iter(self.train_dl)
             
             for i in range(batches_per_task):
