@@ -112,8 +112,8 @@ class UnifiedMultiTaskTrainer(nn.Module):
                     with autocast(enabled=self.config.use_fp16):
                         loss = self.diffusion.training_loosses(self.model, audio_emb, conditioning, causal=causal)
                     
-                    loss_sum += loss
-                    count += 1
+                loss_sum += loss
+                count += 1
                 
         return loss_sum, count
         
