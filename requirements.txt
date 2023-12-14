@@ -7,8 +7,8 @@ einops==0.6.1
 einops-exts==0.0.4
 numba==0.57.1
 numpy==1.24.4
-torch==2.0.1
-torchaudio==2.0.2
+torch==2.1.1
+torchaudio==2.1.1
 torchmetrics==1.1.2
 tqdm==4.66.1
 transformers==4.33.1

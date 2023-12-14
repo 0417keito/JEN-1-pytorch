@@ -81,13 +81,17 @@ class UnifiedMultiTaskTrainer(nn.Module):
             summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
         
         self.model.train()
-    
+
     def eval(self):
+        from tqdm import tqdm
         self.model.eval()
         count = 0
         loss_dict = {task: 0 for task in self.tasks}
+        total_batches = len(self.valid_dl)
+        progress_bar = tqdm(enumerate(self.valid_dl), total=total_batches, desc='Evaluating', leave=False)
+
         with torch.no_grad():
-            for batch_idx, (audio_emb, metadata) in enumerate(self.valid_dl):
+            for batch_idx, (audio_emb, metadata) in progress_bar:
                 b, _, _, device = *audio_emb.shape, self.config.device
                 assert b % len(self.tasks) == 0, "Batch size must be divisible by the number of tasks"
                 sub_batch_size = b // len(self.tasks)
@@ -113,14 +117,21 @@ class UnifiedMultiTaskTrainer(nn.Module):
                             loss = self.diffusion.training_loosses(self.model, audio_emb, conditioning, causal=causal)
                     
                     loss_dict[task] += loss.item()
+                # Update the progress bar description with the average loss
+                avg_loss = sum(loss_dict.values()) / len(loss_dict)
+                progress_bar.set_description(f"Eval Loss: {avg_loss:.4f}")
                 count += 1
                 
         return loss_dict, count
-        
+
     def train_loop(self):
+        from tqdm import tqdm
         num_epoch = self.config.num_epoch
         for epoch in range(self.epoch_str, int(num_epoch + 1)):
-            for batch_idx, (audio_emb, metadata) in enumerate(self.train_dl):
+            total_batches = len(self.train_dl)
+            progress_bar = tqdm(enumerate(self.train_dl), total=total_batches, desc=f'Epoch {epoch}/{num_epoch}', leave=False)
+
+            for batch_idx, (audio_emb, metadata) in progress_bar:
                 batch_size = audio_emb.size(0)
                 assert batch_size % len(self.tasks) == 0, "Batch size must be divisible by the number of tasks"
                 sub_batch_size = batch_size // len(self.tasks)
@@ -167,7 +178,10 @@ class UnifiedMultiTaskTrainer(nn.Module):
                         
                     if self.global_step % self.config.eval_interval == 0:
                         self.eval_all_tasks(epoch=epoch)
-                self.global_step += 1   
+                # Update the progress bar with the current loss
+                progress_bar.set_description(
+                    f"Train Loss: {weighted_loss.item():.4f} - Epoch {epoch}/{num_epoch}")
+                self.global_step += 1
     
     def train(self, task, audio_emb, metadata):
         self.model.train()
