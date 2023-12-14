@@ -139,7 +139,7 @@ def get_dataloaders(dataset_dir, sr, channels, min_duration, max_duration, sampl
         val_dataset = MusicDataset(dataset_dir=train_dir, sr=sr, channels=channels,
                                      min_duration=min_duration, max_duration=max_duration, sample_duration=sample_duration,
                                      aug_shift=aug_shift, device=device)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate, drop_last=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate, drop_last=True)
 
     return train_dataloader, val_dataloader
