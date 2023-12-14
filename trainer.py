@@ -89,6 +89,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
         with torch.no_grad():
             for batch_idx, (audio_emb, metadata) in enumerate(self.valid_dl):
                 b, _, _, device = *audio_emb.shape, self.config.device
+                assert b % len(self.tasks) == 0, "Batch size must be divisible by the number of tasks"
                 sub_batch_size = b // len(self.tasks)
                 
                 for i, task in enumerate(self.tasks):
@@ -121,6 +122,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
         for epoch in range(self.epoch_str, int(num_epoch + 1)):
             for batch_idx, (audio_emb, metadata) in enumerate(self.train_dl):
                 batch_size = audio_emb.size(0)
+                assert batch_size % len(self.tasks) == 0, "Batch size must be divisible by the number of tasks"
                 sub_batch_size = batch_size // len(self.tasks)
                 
                 loss_dict = {}
@@ -136,7 +138,6 @@ class UnifiedMultiTaskTrainer(nn.Module):
                 
                 self.optimizer.zero_grad()
                 self.scaler.scale(weighted_loss).backward()
-                print('weighted_loss_type', type(weighted_loss))
                 nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
                 self.scaler.unscale_(self.optimizer)
                 self.scaler.step(self.optimizer)
