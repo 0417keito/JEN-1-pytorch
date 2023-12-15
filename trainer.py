@@ -138,8 +138,8 @@ class UnifiedMultiTaskTrainer(nn.Module):
                 
                 self.optimizer.zero_grad()
                 self.scaler.scale(weighted_loss).backward()
-                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
                 self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
                 self.scaler.step(self.optimizer)
                 self.lr_scheduler.step()
                 self.scaler.update()
