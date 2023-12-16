@@ -28,6 +28,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
                  logger,
                  writers,
                  grad_clip,
+                 grad_accum_every,
                  cross_attn_cond_ids=['prompt'],
                  global_cond_ids= [],
                  input_concat_ids= ['masked_input', 'mask'],
@@ -39,6 +40,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
         self.epoch_str = epoch_str
         self.global_step = global_step
         self.grad_clip = grad_clip
+        self.grad_accum_every = grad_accum_every
         self.model = model
         self.diffusion = diffusion
         self.conditioner = conditioner
@@ -110,7 +112,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
                             loss = self.diffusion.training_loosses(self.model, sub_audio_emb, t, conditioning, causal=causal)
                     else:
                         with autocast(enabled=self.config.use_fp16):
-                            loss = self.diffusion.training_loosses(self.model, audio_emb, conditioning, causal=causal)
+                            loss = self.diffusion.training_loosses(self.model, sub_audio_emb, conditioning, causal=causal)
                     
                     loss_dict[task] += loss.item()
                 count += 1
@@ -119,54 +121,65 @@ class UnifiedMultiTaskTrainer(nn.Module):
         
     def train_loop(self):
         num_epoch = self.config.num_epoch
+        grad_accum = 0
+        
         for epoch in range(self.epoch_str, int(num_epoch + 1)):
+            weighted_loss = torch.tensor(0.0, device=self.config.device)
+            loss_dict = {task: 0 for task in self.tasks}
             for batch_idx, (audio_emb, metadata) in enumerate(self.train_dl):
                 batch_size = audio_emb.size(0)
                 assert batch_size % len(self.tasks) == 0, "Batch size must be divisible by the number of tasks"
                 sub_batch_size = batch_size // len(self.tasks)
                 
-                loss_dict = {}
-                weighted_loss = torch.tensor(0.0, device=self.config.device)
                 for i, task in enumerate(self.tasks):
                     start_idx = i * sub_batch_size
                     end_idx = start_idx + sub_batch_size
                     sub_audio_emb = audio_emb[start_idx:end_idx]
                     sub_metadata = metadata[start_idx:end_idx]
                     loss = self.train(task=task, audio_emb=sub_audio_emb, metadata=sub_metadata)
-                    loss_dict[task] = loss.item()
+                    loss_dict[task] += loss.item()
                     weighted_loss += loss
                 
-                self.optimizer.zero_grad()
-                self.scaler.scale(weighted_loss).backward()
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
-                self.scaler.step(self.optimizer)
-                self.lr_scheduler.step()
-                self.scaler.update()
+                if grad_accum == 0:
+                    self.optimizer.zero_grad()
+                self.scaler.scale(weighted_loss / self.grad_accum_every).backward()
+                grad_accum += 1
                 
-                if self.rank == 0:
-                    loss_text_guided = loss_dict['text_guided']
-                    loss_inpaint = loss_dict['music_inpaint']
-                    loss_cont = loss_dict['music_cont']
-                    if self.global_step % self.config.log_interval == 0:
+                if grad_accum == self.grad_accum_every:
+                    self.scaler.unscale_(self.optimizer)
+                    nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
+                    self.scaler.step(self.optimizer)
+                    self.lr_scheduler.step()
+                    self.scaler.update()
+                    grad_accum = 0
+                
+                    if self.rank == 0:
+                        loss_text_guided = loss_dict['text_guided']
+                        loss_inpaint = loss_dict['music_inpaint']
+                        loss_cont = loss_dict['music_cont']
+                        
                         lr = self.optimizer.param_groups[0]['lr']
                         self.logger.info('Train Epoch: {}, [{:.0f}%]'.format(
                             epoch, 100. * batch_idx / len(self.train_dl)
                             ))
                         self.logger.info(
-                            f'loss: {weighted_loss} '
-                            f'loss_text_guided: {loss_text_guided} '
-                            f'loss_inpaint: {loss_inpaint} '
-                            f'loss_cont: {loss_cont} '
+                            f'loss: {weighted_loss / self.grad_accum_every} '
+                            f'loss_text_guided: {loss_text_guided / self.grad_accum_every} '
+                            f'loss_inpaint: {loss_inpaint / self.grad_accum_every} '
+                            f'loss_cont: {loss_cont / self.grad_accum_every} '
                             f'global_step: {self.global_step}, lr:{lr}')
-                        scalars = {'loss/train': weighted_loss,
-                                   'loss_text_guided/train': loss_text_guided,
-                                   'loss_inpaint/train': loss_inpaint,
-                                   'loss_cont/train': loss_cont}
+                        scalars = {'loss/train': weighted_loss / self.grad_accum_every,
+                                'loss_text_guided/train': loss_text_guided / self.grad_accum_every,
+                                'loss_inpaint/train': loss_inpaint / self.grad_accum_every,
+                                'loss_cont/train': loss_cont / self.grad_accum_every}
                         summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
                         
-                    if self.global_step % self.config.eval_interval == 0:
-                        self.eval_all_tasks(epoch=epoch)
+                    weighted_loss = torch.tensor(0.0, device=self.config.device)
+                    loss_dict = {task: 0 for task in self.tasks}
+                    
+                if self.global_step % self.config.eval_interval ==  0:
+                    self.eval_all_tasks(epoch=epoch)
+                
                 self.global_step += 1   
     
     def train(self, task, audio_emb, metadata):
