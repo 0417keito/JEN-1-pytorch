@@ -115,6 +115,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
                             loss = self.diffusion.training_loosses(self.model, sub_audio_emb, conditioning, causal=causal)
                     
                     loss_dict[task] += loss.item()
+                
                 count += 1
                 
         return loss_dict, count
@@ -122,10 +123,10 @@ class UnifiedMultiTaskTrainer(nn.Module):
     def train_loop(self):
         num_epoch = self.config.num_epoch
         grad_accum = 0
+        loss_dict = {task: 0 for task in self.tasks}
+        weighted_loss = torch.tensor(0.0, device=self.config.device)
         
         for epoch in range(self.epoch_str, int(self.epoch_str + num_epoch + 1)):
-            weighted_loss = torch.tensor(0.0, device=self.config.device)
-            loss_dict = {task: 0 for task in self.tasks}
             for batch_idx, (audio_emb, metadata) in enumerate(self.train_dl):
                 batch_size = audio_emb.size(0)
                 assert batch_size % len(self.tasks) == 0, "Batch size must be divisible by the number of tasks"
@@ -137,15 +138,15 @@ class UnifiedMultiTaskTrainer(nn.Module):
                     sub_audio_emb = audio_emb[start_idx:end_idx]
                     sub_metadata = metadata[start_idx:end_idx]
                     loss = self.train(task=task, audio_emb=sub_audio_emb, metadata=sub_metadata)
-                    loss_dict[task] += loss.item()
-                    weighted_loss += loss
+                    loss_dict[task] += loss.item() / self.grad_accum_every
+                    weighted_loss += loss / self.grad_accum_every
                 
                 if grad_accum == 0:
                     self.optimizer.zero_grad()
-                self.scaler.scale(weighted_loss / self.grad_accum_every).backward()
                 grad_accum += 1
                 
                 if grad_accum == self.grad_accum_every:
+                    self.scaler.scale(weighted_loss).backward()
                     self.scaler.unscale_(self.optimizer)
                     nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
                     self.scaler.step(self.optimizer)
@@ -163,19 +164,19 @@ class UnifiedMultiTaskTrainer(nn.Module):
                             epoch, 100. * batch_idx / len(self.train_dl)
                             ))
                         self.logger.info(
-                            f'loss: {weighted_loss / self.grad_accum_every} '
-                            f'loss_text_guided: {loss_text_guided / self.grad_accum_every} '
-                            f'loss_inpaint: {loss_inpaint / self.grad_accum_every} '
-                            f'loss_cont: {loss_cont / self.grad_accum_every} '
+                            f'loss: {weighted_loss} '
+                            f'loss_text_guided: {loss_text_guided} '
+                            f'loss_inpaint: {loss_inpaint} '
+                            f'loss_cont: {loss_cont} '
                             f'global_step: {self.global_step}, lr:{lr}')
-                        scalars = {'loss/train': weighted_loss / self.grad_accum_every,
-                                'loss_text_guided/train': loss_text_guided / self.grad_accum_every,
-                                'loss_inpaint/train': loss_inpaint / self.grad_accum_every,
-                                'loss_cont/train': loss_cont / self.grad_accum_every}
+                        scalars = {'loss/train': weighted_loss,
+                                'loss_text_guided/train': loss_text_guided,
+                                'loss_inpaint/train': loss_inpaint,
+                                'loss_cont/train': loss_cont}
                         summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
-                    loss_dict = {task: 0 for task in self.tasks}
                     
-                weighted_loss = torch.tensor(0.0, device=self.config.device)
+                    loss_dict = {task: 0 for task in self.tasks}
+                    weighted_loss = torch.tensor(0.0, device=self.config.device)
                     
                 if self.global_step % self.config.eval_interval ==  0 and self.global_step != 0:
                     self.eval_all_tasks(epoch=epoch)
