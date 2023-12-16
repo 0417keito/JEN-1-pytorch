@@ -71,7 +71,7 @@ def run(rank, n_gpus, config: Config):
             epoch_str = 1
             global_step = 0.
             print('Resume learning mode')
-    elif config.is_fintuning:
+    elif config.is_finetuning:
         pass
     else:
         epoch_str = 1
@@ -103,7 +103,8 @@ def run(rank, n_gpus, config: Config):
             scaler=scaler,
             logger=logger,
             writers=[writer, writer_val],
-            grad_clip=grad_clip
+            grad_clip=grad_clip,
+            grad_accum_every=config.grad_accum_every
         )
     else:
         trainer = UnifiedMultiTaskTrainer(
@@ -118,7 +119,8 @@ def run(rank, n_gpus, config: Config):
             scaler=scaler,
             logger=logger,
             writers=[writer, None],
-            grad_clip=grad_clip
+            grad_clip=grad_clip,
+            grad_accum_every=config.grad_accum_every,
         )
     trainer.train_loop()
 
