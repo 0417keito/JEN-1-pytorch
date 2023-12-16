@@ -177,7 +177,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
                     weighted_loss = torch.tensor(0.0, device=self.config.device)
                     loss_dict = {task: 0 for task in self.tasks}
                     
-                if self.global_step % self.config.eval_interval ==  0:
+                if self.global_step % self.config.eval_interval ==  0 and not self.global_step != 0:
                     self.eval_all_tasks(epoch=epoch)
                 
                 self.global_step += 1   
