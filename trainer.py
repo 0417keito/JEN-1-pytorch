@@ -123,7 +123,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
         num_epoch = self.config.num_epoch
         grad_accum = 0
         
-        for epoch in range(self.epoch_str, int(num_epoch + 1)):
+        for epoch in range(self.epoch_str, int(self.epoch_str + num_epoch + 1)):
             weighted_loss = torch.tensor(0.0, device=self.config.device)
             loss_dict = {task: 0 for task in self.tasks}
             for batch_idx, (audio_emb, metadata) in enumerate(self.train_dl):
@@ -173,14 +173,16 @@ class UnifiedMultiTaskTrainer(nn.Module):
                                 'loss_inpaint/train': loss_inpaint / self.grad_accum_every,
                                 'loss_cont/train': loss_cont / self.grad_accum_every}
                         summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
-                        
-                    weighted_loss = torch.tensor(0.0, device=self.config.device)
                     loss_dict = {task: 0 for task in self.tasks}
+                    
+                weighted_loss = torch.tensor(0.0, device=self.config.device)
                     
                 if self.global_step % self.config.eval_interval ==  0 and self.global_step != 0:
                     self.eval_all_tasks(epoch=epoch)
                 
                 self.global_step += 1   
+                
+        self.eval_all_tasks(epoch=epoch)
     
     def train(self, task, audio_emb, metadata):
         self.model.train()
