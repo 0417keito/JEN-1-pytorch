@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import autocast
 import typing as tp
+from tqdm import tqdm
 
 from utils.config import Config
 from utils.logger import summarize
@@ -62,6 +63,8 @@ class UnifiedMultiTaskTrainer(nn.Module):
         avg_total_loss = 0
             
         all_task_loss_dict, task_count = self.eval()
+        print('task_count', task_count)
+        print('all_task_loss_dict', all_task_loss_dict)
         for task in self.tasks:
             avg_loss = all_task_loss_dict[task] / task_count if task_count > 0 else 0
             avg_total_loss += avg_loss
@@ -89,7 +92,7 @@ class UnifiedMultiTaskTrainer(nn.Module):
         count = 0
         loss_dict = {task: 0 for task in self.tasks}
         with torch.no_grad():
-            for batch_idx, (audio_emb, metadata) in enumerate(self.valid_dl):
+            for batch_idx, (audio_emb, metadata) in tqdm(enumerate(self.valid_dl)):
                 b, _, _, device = *audio_emb.shape, self.config.device
                 assert b % len(self.tasks) == 0, "Batch size must be divisible by the number of tasks"
                 sub_batch_size = b // len(self.tasks)
