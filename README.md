@@ -77,7 +77,7 @@ please see [config.py](https://github.com/0417keito/JEN-1-pytorch/blob/main/util
 coming soon !
 
 ## 🙏Appreciation
-[Dr Adam Fils](https://github.com/adamfils) - for support and brought this to my attention.
+[Dr Adam Fils](https://github.com/adamfils) - Thank you for providing the GPU. I really appreciate Adam giving me this opportunity.
 
 ## ⭐️Show Your Support
 
