@@ -15,7 +15,7 @@ class DataConfig:
     batch_size = 3
     shuffle = True
     train_test_split = 0.5
-    device = 'cuda' if torch.cuda.is_available else 'cpu'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 @dataclass
 class GDM_Config:
