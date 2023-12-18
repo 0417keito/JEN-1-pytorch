@@ -86,13 +86,14 @@ class UnifiedMultiTaskTrainer(nn.Module):
             summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
         
         self.model.train()
-    
+
     def eval(self):
         self.model.eval()
         count = 0
         loss_dict = {task: 0 for task in self.tasks}
         with torch.no_grad():
-            for batch_idx, (audio_emb, metadata) in tqdm(enumerate(self.valid_dl)):
+            progress_bar = tqdm(enumerate(self.valid_dl), desc="Evaluation")
+            for batch_idx, (audio_emb, metadata) in progress_bar:
                 b, _, _, device = *audio_emb.shape, self.config.device
                 assert b % len(self.tasks) == 0, "Batch size must be divisible by the number of tasks"
                 sub_batch_size = b // len(self.tasks)
@@ -118,67 +119,77 @@ class UnifiedMultiTaskTrainer(nn.Module):
                             loss = self.diffusion.training_loosses(self.model, sub_audio_emb, conditioning, causal=causal)
                     
                     loss_dict[task] += loss.item()
-                
+
+                # Update the progress bar with the current average loss
+                avg_loss = sum(loss_dict.values()) / count if count else 0
+                progress_bar.set_description(f'Validation Loss: {avg_loss:.4f}')
+                progress_bar.set_postfix({'avg_loss': avg_loss})
                 count += 1
                 
         return loss_dict, count
-        
+
     def train_loop(self):
         num_epoch = self.config.num_epoch
         grad_accum = 0
         all_loss = 0
         loss_dict = {task: 0 for task in self.tasks}
-        
+
         for epoch in range(self.epoch_str, int(self.epoch_str + num_epoch + 1)):
-            for batch_idx, (audio_emb, metadata) in enumerate(self.train_dl):
-                all_task_loss, all_loss_dict = self.train(audio_emb=audio_emb, metadata=metadata)
-                all_loss += all_task_loss.item() / self.grad_accum_every
-                for task in self.tasks:
-                    loss_dict[task] += (all_loss_dict[task] / self.grad_accum_every)
+            with tqdm(enumerate(self.train_dl), desc=f"Epoch {epoch}", total=len(self.train_dl)) as t:
+                for batch_idx, (audio_emb, metadata) in t:
+                    all_task_loss, all_loss_dict = self.train(audio_emb=audio_emb, metadata=metadata)
+                    all_loss += all_task_loss.item() / self.grad_accum_every
+                    for task in self.tasks:
+                        loss_dict[task] += (all_loss_dict[task] / self.grad_accum_every)
+
+                    if grad_accum == 0:
+                        self.optimizer.zero_grad()
+                    self.scaler.scale(all_task_loss / self.grad_accum_every).backward()
+                    grad_accum += 1
+
+                    if grad_accum == self.grad_accum_every:
+                        self.scaler.unscale_(self.optimizer)
+                        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
+                        self.scaler.step(self.optimizer)
+                        self.lr_scheduler.step()
+                        self.scaler.update()
+                        grad_accum = 0
+
+                        if self.rank == 0:
+                            loss_text_guided = loss_dict['text_guided']
+                            loss_inpaint = loss_dict['music_inpaint']
+                            loss_cont = loss_dict['music_cont']
+
+                            lr = self.optimizer.param_groups[0]['lr']
+                            self.logger.info('Train Epoch: {}, [{:.0f}%]'.format(
+                                epoch, 100. * batch_idx / len(self.train_dl)
+                                ))
+                            self.logger.info(
+                                f'loss: {all_loss} '
+                                f'loss_text_guided: {loss_text_guided} '
+                                f'loss_inpaint: {loss_inpaint} '
+                                f'loss_cont: {loss_cont} '
+                                f'global_step: {self.global_step}, lr:{lr}')
+                            # Update the tqdm progress bar
+                            progress_desc = f'Epoch: {epoch}, Loss: {all_loss:.4f}, LR: {lr:.2e}'
+                            # tqdm.write(progress_desc)
+                            t.set_description(progress_desc)
+                            t.set_postfix(loss=all_loss, lr=lr)
+                            scalars = {'loss/train': all_loss,
+                                    'loss_text_guided/train': loss_text_guided,
+                                    'loss_inpaint/train': loss_inpaint,
+                                    'loss_cont/train': loss_cont}
+                            summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
+
+                        loss_dict = {task: 0 for task in self.tasks}
+                        all_loss = 0
+
+                    if self.global_step % self.config.eval_interval ==  0 and self.global_step != 0:
+                        self.eval_all_tasks(epoch=epoch)
+
+                    self.global_step += 1
                 
-                if grad_accum == 0:
-                    self.optimizer.zero_grad()
-                self.scaler.scale(all_task_loss / self.grad_accum_every).backward()
-                grad_accum += 1
-                
-                if grad_accum == self.grad_accum_every:
-                    self.scaler.unscale_(self.optimizer)
-                    nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip)
-                    self.scaler.step(self.optimizer)
-                    self.lr_scheduler.step()
-                    self.scaler.update()
-                    grad_accum = 0
-                
-                    if self.rank == 0:
-                        loss_text_guided = loss_dict['text_guided']
-                        loss_inpaint = loss_dict['music_inpaint']
-                        loss_cont = loss_dict['music_cont']
-                        
-                        lr = self.optimizer.param_groups[0]['lr']
-                        self.logger.info('Train Epoch: {}, [{:.0f}%]'.format(
-                            epoch, 100. * batch_idx / len(self.train_dl)
-                            ))
-                        self.logger.info(
-                            f'loss: {all_loss} '
-                            f'loss_text_guided: {loss_text_guided} '
-                            f'loss_inpaint: {loss_inpaint} '
-                            f'loss_cont: {loss_cont} '
-                            f'global_step: {self.global_step}, lr:{lr}')
-                        scalars = {'loss/train': all_loss,
-                                'loss_text_guided/train': loss_text_guided,
-                                'loss_inpaint/train': loss_inpaint,
-                                'loss_cont/train': loss_cont}
-                        summarize(writer=self.writer, global_step=self.global_step, scalars=scalars)
-                    
-                    loss_dict = {task: 0 for task in self.tasks}
-                    all_loss = 0
-                    
-                if self.global_step % self.config.eval_interval ==  0 and self.global_step != 0:
-                    self.eval_all_tasks(epoch=epoch)
-                
-                self.global_step += 1   
-                
-        self.eval_all_tasks(epoch=epoch)
+            self.eval_all_tasks(epoch=epoch)
     
     def train(self, audio_emb, metadata):
         loss_dict = {task: 0 for task in self.tasks}

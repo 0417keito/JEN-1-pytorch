@@ -24,8 +24,11 @@ class MusicDataset(Dataset):
         self.aug_shift = aug_shift
         self.device = device
         self.model = EncodecModel.encodec_model_48khz().to(device=self.device)
-        self.audio_files_dir = f'{dataset_dir}/audios'
-        self.metadatas_dir = f'{dataset_dir}/metadata'
+        # self.audio_files_dir = f'{dataset_dir}/audios'
+        # self.metadatas_dir = f'{dataset_dir}/metadata'
+        # My audio and metadata files are in the same directory
+        self.audio_files_dir = f'{dataset_dir}'
+        self.metadatas_dir = f'{dataset_dir}'
         self.init_dataset()
     
     def get_duration_sec(self, file): 
@@ -59,7 +62,7 @@ class MusicDataset(Dataset):
         shift = random.randint(-half_interval, half_interval) if self.aug_shift else 0
         offset = item * self.sample_duration + shift
         midpoint = offset + half_interval
-        assert 0 <= midpoint < self.cumsum[-1], f'Midpoint {midpoint} of item beyond total length {self.cumsum[-1]}'
+        assert 0 <= midpoint <= self.cumsum[-1], f'Midpoint {midpoint} of item beyond total length {self.cumsum[-1]}'
         index = torch.searchsorted(self.cumsum, midpoint)
         start, end = self.cumsum[index-1] if index > 0 else 0.0, self.cumsum[index]
         assert start <= midpoint <= end, f'Midpoint {midpoint} not inside interval [{start}, {end}] for index {index}'

@@ -4,17 +4,17 @@ from .conditioner_config import ConditionerConfig
 
 @dataclass
 class DataConfig:
-    dataset_dir = ''
+    dataset_dir = 'train'
     sr = 48000
     channels = 2
     # min_duration, max_duration, and sample_duration are all listed in seconds.
     min_duration = 0
     max_duration = 300
-    sample_duration = 10 # This length determines the length of the latent variable. Adjust the length of the latent variable so that it is 2**(num_layers).
+    sample_duration = 60 # This length determines the length of the latent variable. Adjust the length of the latent variable so that it is 2**(num_layers).
     aug_shift = True
-    batch_size = 3
+    batch_size = 9
     shuffle = True
-    train_test_split = 0.5
+    train_test_split = 0.8
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 @dataclass
@@ -83,13 +83,13 @@ class Config:
     save_dir = ''
     log_dir = ''
     use_ddp = True
-    use_fp16 = True
+    use_fp16 = False
     use_ema = False
     is_finetuning = False
     seed = 4996
     tasks = ['text_guided', 'music_inpaint', 'music_cont']
-    num_epoch = 100
-    eval_interval = 30
+    num_epoch = 50
+    eval_interval = 125
     grad_accum_every = 10
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     diffusion_type = 'gdm'

@@ -27,11 +27,11 @@ def run(rank, n_gpus, config: Config):
         writer = SummaryWriter(log_dir=config.log_dir)
         writer_val = SummaryWriter(log_dir=os.path.join(config.log_dir, 'val'))
 
-    dist.init_process_group(backend='nccl', init_method='env://',
-                                world_size=n_gpus, rank=rank)
+    # dist.init_process_group(backend='nccl', init_method='env://', world_size=n_gpus, rank=rank)
 
     torch.manual_seed(config.seed)
-    torch.cuda.set_device(rank)
+    if torch.cuda.is_available():
+        torch.cuda.set_device(rank)
 
     # create dataset
     logger.info('creating data loader...')
@@ -127,4 +127,13 @@ def run(rank, n_gpus, config: Config):
 
 if __name__ == '__main__':
     config = Config()
-    main(config=Config)
+    dataset_config = DataConfig()
+    config.num_epoch = 100000
+    config.save_dir = './checkpoints'
+    config.log_dir = './logs'
+    config.use_ddp = False
+    dataset_config.dataset_dir = './train'
+    dataset_config.cache_dir = './data'
+    dataset_config.batch_size = 1
+    config.dataset_config = dataset_config
+    main(config=config)
