@@ -31,7 +31,7 @@ class Jen1():
         self.global_cond_ids = global_cond_ids
         self.input_concat_ids = input_concat_ids 
         
-        self.audio_encoder = EncodecModel.encodec_model_48khz()
+        self.audio_encoder = EncodecModel.encodec_model_48khz().to(self.device)
         
     def get_model_and_diffusion(self, steps, use_gdm):
         if use_gdm:
@@ -129,7 +129,6 @@ class Jen1():
             conditioning = self.get_conditioning(conditioning)
             
             sample_embs = diffusion.sample(model, emb_shape, conditioning, causal, init_data=init_emb)
-            sample_embs = sample_embs.to('cpu')
             samples = self.audio_encoder.decoder(sample_embs)
         
         return samples
@@ -146,8 +145,10 @@ class Jen1():
         return mask
     
     def get_emb(self, audio):
-        emb = self.audio_encoder(audio)
-        return emb    
+        encoded_frames = self.audio_encoder.encode(audio)
+        codes = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)
+        codes = codes.transpose(0, 1)
+        emb = self.audio_encoder.quantizer.decode(codes)  
             
     def get_conditioning(self, cond):
         cross_attention_input = None
