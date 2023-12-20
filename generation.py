@@ -149,6 +149,7 @@ class Jen1():
         codes = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)
         codes = codes.transpose(0, 1)
         emb = self.audio_encoder.quantizer.decode(codes)  
+        return emb
             
     def get_conditioning(self, cond):
         cross_attention_input = None
