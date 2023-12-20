@@ -96,11 +96,7 @@ class MusicDataset(Dataset):
         chunk = convert_audio(chunk, sr, self.model.sample_rate, self.model.channels)
         chunk = chunk.unsqueeze(0).to(device=self.device)
         with torch.no_grad():
-            encoded_frames = self.model.encode(chunk)
-        chunk = chunk.mean(0, keepdim=True)
-        codes = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)
-        codes = codes.transpose(0, 1)
-        emb = self.model.quantizer.decode(codes)
+            emb = self.model.encoder(chunk)
         emb = emb.to(self.device)
         
         return chunk, metadata, emb
