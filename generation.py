@@ -146,10 +146,7 @@ class Jen1():
         return mask
     
     def get_emb(self, audio):
-        encoded_frames = self.audio_encoder.encode(audio)
-        codes = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)
-        codes = codes.transpose(0, 1)
-        emb = self.audio_encoder.quantizer.decode(codes)
+        emb = self.audio_encoder(audio)
         return emb    
             
     def get_conditioning(self, cond):
