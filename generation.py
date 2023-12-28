@@ -96,32 +96,29 @@ class Jen1():
 
         if task == 'text_guided':
             mask = self.get_mask(sample_length, 0, seconds, batch_size)
-            masked_input = init_audio * mask
             causal = False
         elif task == 'music_inpaint':
             mask = self.get_mask(sample_length, inpainting_scope[0], inpainting_scope[1], batch_size)
-            inpaint_input = init_audio * mask
-            masked_input = inpaint_input
             causal = False
         elif task == 'music_cont':
             cont_length = sample_length - init_audio.size(2)
             cont_start = init_audio.size(2)
             mask = self.get_mask(sample_length, cont_start/self.sample_rate, seconds, batch_size)
             cont_audio = torch.randn(batch_size, self.audio_encoder.channels, cont_length, device=self.device)
-            cont_audio = cont_audio * mask[:, cont_start:]
-            masked_input = torch.cat([init_audio, cont_audio], dim=2)     
+            cont_audio = cont_audio * mask[:, cont_start:]   
+            init_audio = torch.cat([init_audio, cont_audio], dim=2) 
             causal = True   
         
         with torch.no_grad():
             init_emb = self.get_emb(init_audio).to(self.device)
             emb_shape = init_emb.shape
-            if flag:
-                init_emb = None
-            masked_emb = self.get_emb(masked_input).to(self.device)
             mask = mask.to(self.device)
             
             mask = torch.nn.functional.interpolate(mask, size=(emb_shape[2]))
-            
+            masked_emb = init_emb * mask
+            if flag:
+                init_emb = None
+                
             batch_metadata = [{'prompt': prompt} for _ in range(batch_size)]
             conditioning = self.conditioner(batch_metadata, self.device)
             conditioning['masked_input'] = masked_emb
@@ -129,6 +126,7 @@ class Jen1():
             conditioning = self.get_conditioning(conditioning)
             
             sample_embs = diffusion.sample(model, emb_shape, conditioning, causal, init_data=init_emb)
+            sample_embs = sample_embs.to('cpu')
             samples = self.audio_encoder.decoder(sample_embs)
         
         return samples
