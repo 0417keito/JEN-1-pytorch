@@ -16,6 +16,8 @@ class DataConfig:
     shuffle = True
     train_test_split = 0.5
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    durations_path = None # if you use preprocess, specify your path
+    cumsum_path = None # if you use preprocess, specify your path
 
 @dataclass
 class GDM_Config:
@@ -82,7 +84,7 @@ class OptimizerConfig:
 class Config:
     save_dir = ''
     log_dir = ''
-    use_ddp = True
+    use_ddp = False
     use_fp16 = True
     use_ema = False
     is_finetuning = False
