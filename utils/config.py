@@ -18,6 +18,7 @@ class DataConfig:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     durations_path = None # if you use preprocess, specify your path
     cumsum_path = None # if you use preprocess, specify your path
+    audio_file_txt_path = None # if you use preprocess, specify your path
 
 @dataclass
 class GDM_Config:

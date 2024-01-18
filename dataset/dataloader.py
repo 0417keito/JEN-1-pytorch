@@ -13,7 +13,8 @@ from encodec.utils import convert_audio
 
 class MusicDataset(Dataset):
     def __init__(self, dataset_dir, sr, channels, min_duration, max_duration,
-                 sample_duration, aug_shift, device, durations_path, cumsum_path):
+                 sample_duration, aug_shift, device, durations_path, cumsum_path,
+                 audio_file_txt_path):
         super().__init__()
         self.dataset_dir = dataset_dir
         self.sr = sr
@@ -26,8 +27,14 @@ class MusicDataset(Dataset):
         self.model = EncodecModel.encodec_model_48khz().to(device=self.device)
         self.audio_files_dir = f'{dataset_dir}/audios'
         self.metadatas_dir = f'{dataset_dir}/metadata'
-        self.durations = torch.load(durations_path)
-        self.cumsum = torch.load(cumsum_path)
+        if durations_path is not None:
+            self.durations = torch.load(durations_path)
+        if cumsum_path is not None:
+            self.cumsum = torch.load(cumsum_path)
+        if audio_file_txt_path is not None:
+            self.audio_file_txt_path = audio_file_txt_path
+            with open(self.audio_file_txt_path, 'r') as file:
+                self.audio_files = [line.strip() for line in file]
         self.init_dataset()
     
     def get_duration_sec(self, file): 
@@ -126,13 +133,14 @@ def get_dataloader(dataset_folder, batch_size: int = 50, shuffle: bool = True):
 
 def get_dataloaders(dataset_dir, sr, channels, min_duration, max_duration, sample_duration, 
                     aug_shift, batch_size: int = 50, shuffle: bool = True, split_ratio=0.8, device='cpu',
-                    durations_path = None, cumsum_path = None):
+                    durations_path = None, cumsum_path = None, audio_file_txt_path=None):
     if not isinstance(dataset_dir, tuple):
         dataset = MusicDataset(dataset_dir=dataset_dir, sr=sr, channels=channels,
                                min_duration=min_duration, max_duration=max_duration, sample_duration=sample_duration,
                                aug_shift=aug_shift, device=device, 
                                durations_path=durations_path,
-                               cumsum_path=cumsum_path)
+                               cumsum_path=cumsum_path,
+                               audio_file_txt_path=audio_file_txt_path)
         # Split the dataset into train and validation
         train_size = int(split_ratio * len(dataset))
         val_size = len(dataset) - train_size
@@ -143,12 +151,14 @@ def get_dataloaders(dataset_dir, sr, channels, min_duration, max_duration, sampl
                                      min_duration=min_duration, max_duration=max_duration, sample_duration=sample_duration,
                                      aug_shift=aug_shift, device=device,
                                      durations_path=durations_path,
-                                     cumsum_path=cumsum_path)
+                                     cumsum_path=cumsum_path,
+                                     audio_file_txt_path=audio_file_txt_path)
         val_dataset = MusicDataset(dataset_dir=valid_dir, sr=sr, channels=channels,
                                      min_duration=min_duration, max_duration=max_duration, sample_duration=sample_duration,
                                      aug_shift=aug_shift, device=device,
                                      durations_path=durations_path,
-                                     cumsum_path=cumsum_path)
+                                     cumsum_path=cumsum_path, 
+                                     audio_file_txt_path=audio_file_txt_path)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate, drop_last=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate, drop_last=True)
 
