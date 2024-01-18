@@ -42,7 +42,8 @@ def run(rank, n_gpus, config: Config):
                                          data_config.max_duration, data_config.sample_duration,
                                          data_config.aug_shift, data_config.batch_size,
                                          data_config.shuffle, data_config.train_test_split,
-                                         data_config.device)
+                                         data_config.device,
+                                         )
 
     # create model and diffusion
     logger.info('creating model and diffusion...')
