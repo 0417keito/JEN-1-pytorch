@@ -13,7 +13,7 @@ from encodec.utils import convert_audio
 
 class MusicDataset(Dataset):
     def __init__(self, dataset_dir, sr, channels, min_duration, max_duration,
-                 sample_duration, aug_shift, device):
+                 sample_duration, aug_shift, device, durations_path, cumsum_path):
         super().__init__()
         self.dataset_dir = dataset_dir
         self.sr = sr
@@ -26,6 +26,8 @@ class MusicDataset(Dataset):
         self.model = EncodecModel.encodec_model_48khz().to(device=self.device)
         self.audio_files_dir = f'{dataset_dir}/audios'
         self.metadatas_dir = f'{dataset_dir}/metadata'
+        self.durations = torch.load(durations_path)
+        self.cumsum = torch.load(cumsum_path)
         self.init_dataset()
     
     def get_duration_sec(self, file): 
@@ -51,9 +53,10 @@ class MusicDataset(Dataset):
     def init_dataset(self):
         audio_files = os.listdir(self.audio_files_dir)
         audio_files = [f'{self.audio_files_dir}/{file}' for file in audio_files if file.endswith('.wav') or file.endswith('.mp3')]
-        durations = [self.get_duration_sec(file) for file in audio_files]
-        self.filter(audio_files=audio_files, durations=durations)
-    
+        if self.durations is None and self.cumsum is None:
+            durations = [self.get_duration_sec(file) for file in audio_files]
+            self.filter(audio_files=audio_files, durations=durations)
+            
     def get_index_offset(self, item):
         half_interval = self.sample_duration // 2
         shift = random.randint(-half_interval, half_interval) if self.aug_shift else 0
@@ -122,11 +125,14 @@ def get_dataloader(dataset_folder, batch_size: int = 50, shuffle: bool = True):
 
 
 def get_dataloaders(dataset_dir, sr, channels, min_duration, max_duration, sample_duration, 
-                    aug_shift, batch_size: int = 50, shuffle: bool = True, split_ratio=0.8, device='cpu'):
+                    aug_shift, batch_size: int = 50, shuffle: bool = True, split_ratio=0.8, device='cpu',
+                    durations_path = None, cumsum_path = None):
     if not isinstance(dataset_dir, tuple):
         dataset = MusicDataset(dataset_dir=dataset_dir, sr=sr, channels=channels,
                                min_duration=min_duration, max_duration=max_duration, sample_duration=sample_duration,
-                               aug_shift=aug_shift, device=device)
+                               aug_shift=aug_shift, device=device, 
+                               durations_path=durations_path,
+                               cumsum_path=cumsum_path)
         # Split the dataset into train and validation
         train_size = int(split_ratio * len(dataset))
         val_size = len(dataset) - train_size
@@ -135,10 +141,14 @@ def get_dataloaders(dataset_dir, sr, channels, min_duration, max_duration, sampl
         train_dir, valid_dir = dataset_dir
         train_dataset = MusicDataset(dataset_dir=train_dir, sr=sr, channels=channels,
                                      min_duration=min_duration, max_duration=max_duration, sample_duration=sample_duration,
-                                     aug_shift=aug_shift, device=device)
+                                     aug_shift=aug_shift, device=device,
+                                     durations_path=durations_path,
+                                     cumsum_path=cumsum_path)
         val_dataset = MusicDataset(dataset_dir=valid_dir, sr=sr, channels=channels,
                                      min_duration=min_duration, max_duration=max_duration, sample_duration=sample_duration,
-                                     aug_shift=aug_shift, device=device)
+                                     aug_shift=aug_shift, device=device,
+                                     durations_path=durations_path,
+                                     cumsum_path=cumsum_path)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate, drop_last=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate, drop_last=True)
 
